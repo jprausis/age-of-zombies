@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Age of Zombies</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Special+Elite&display=swap">
+<style>
+  /* Layout: mapa em tela cheia; HUD de rádio velho por cima (faixa no topo, painel embaixo). Visual escuro único, por escolha. */
+  :root {
+    --bg: #0d100c;
+    --panel: rgba(17, 20, 15, 0.93);
+    --panel-solid: #141811;
+    --line: #2e3527;
+    --line-hi: #46503b;
+    --ink: #e7e0c8;
+    --muted: #9b9a83;
+    --accent: #d9a441;
+    --accent-ink: #1b1408;
+    --danger: #d0533c;
+    --good: #8fb062;
+    --info: #9cbccb;
+    --wood: #c08850;
+    --stone: #b4b2a8;
+    --food: #d8c25a;
+    --scrap: #8fb3c4;
+    --display: "Special Elite", "Courier New", monospace;
+    --ui: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+    --top-h: 44px; /* atualizado via JS com a altura real da barra superior */
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 500 15px/1.35 var(--ui);
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #app { position: fixed; inset: 0; }
+  #game { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: default; outline: none; }
+  [hidden] { display: none !important; }
+  button { font: inherit; color: inherit; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  kbd {
+    font: 600 11px/1 var(--ui);
+    letter-spacing: 0.04em;
+    padding: 2px 4px;
+    border: 1px solid var(--line-hi);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    color: var(--muted);
+    background: rgba(0, 0, 0, 0.25);
+  }
+
+  /* ---------- faixa superior ---------- */
+  #topbar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px));
+    background: linear-gradient(var(--panel), rgba(17, 20, 15, 0.82));
+    border-bottom: 1px solid var(--line);
+    z-index: 5;
+  }
+  .brand { font: 400 18px/1 var(--display); letter-spacing: 0.02em; color: var(--accent); white-space: nowrap; }
+  #resources { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+  .chip { display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
+  .chip-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .chip b { font-weight: 700; font-size: 17px; min-width: 2.2em; }
+  .chip b.full { color: var(--accent); }
+  .swatch { width: 9px; height: 9px; display: inline-block; align-self: center; border-radius: 1px; }
+  .swatch-wood { background: var(--wood); }
+  .swatch-stone { background: var(--stone); }
+  .swatch-food { background: var(--food); }
+  .swatch-scrap { background: var(--scrap); }
+  .swatch-pop { background: var(--ink); border-radius: 50%; }
+  .clock { display: flex; align-items: center; gap: 10px; margin-left: auto; font-variant-numeric: tabular-nums; }
+  #day { font: 400 17px/1 var(--display); }
+  #clock { font-weight: 700; font-size: 17px; min-width: 3em; }
+  .clock-bar { width: 96px; height: 6px; background: #20261b; border: 1px solid var(--line); position: relative; overflow: hidden; }
+  #clock-fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+  #clock-wrap.night #clock-fill { background: #5c6fa3; }
+  #clock-wrap.night #day { color: #a9b6dc; }
+  .controls { display: flex; gap: 4px; }
+  .tbtn {
+    background: transparent; border: 1px solid var(--line-hi); border-radius: 3px;
+    padding: 3px 9px; font-weight: 600; font-size: 13px; letter-spacing: 0.04em; cursor: pointer; color: var(--ink);
+  }
+  .tbtn:hover { border-color: var(--accent); }
+  .tbtn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+  #banner {
+    position: absolute; top: calc(var(--top-h) + 12px); left: 50%; transform: translateX(-50%);
+    font: 400 15px/1 var(--display); letter-spacing: 0.04em;
+    padding: 8px 16px; z-index: 4; white-space: nowrap; border: 1px solid;
+  }
+  .banner.warn { color: var(--accent); border-color: rgba(217, 164, 65, 0.5); background: rgba(40, 30, 10, 0.85); }
+  .banner.danger { color: #f0b3a4; border-color: rgba(208, 83, 60, 0.6); background: rgba(45, 14, 10, 0.85); animation: pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { border-color: rgba(208, 83, 60, 0.15); } }
+
+  #messages {
+    position: absolute; top: calc(var(--top-h) + 12px); left: max(16px, env(safe-area-inset-left, 0px));
+    list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px;
+    max-width: min(420px, calc(100vw - 32px)); z-index: 3; pointer-events: none;
+  }
+  .msg { font-size: 15px; padding: 3px 10px; background: rgba(13, 16, 12, 0.78); border-left: 3px solid var(--muted); text-shadow: 0 1px 0 #000; }
+  .msg-warn { border-color: var(--accent); }
+  .msg-danger { border-color: var(--danger); color: #f3c9be; }
+  .msg-good { border-color: var(--good); }
+  #toast {
+    position: absolute; bottom: 196px; left: 50%; transform: translateX(-50%);
+    background: var(--panel-solid); border: 1px solid var(--line-hi); padding: 6px 14px; z-index: 6; font-size: 15px;
+    max-width: calc(100vw - 32px); text-align: center;
+  }
+
+  /* ---------- painel inferior ---------- */
+  #bottom {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 420px); gap: 16px; align-items: stretch;
+    padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+    background: var(--panel); border-top: 1px solid var(--line);
+    z-index: 5;
+  }
+  .minimap-wrap { position: relative; width: 156px; height: 156px; border: 1px solid var(--line-hi); background: #0a0c09; }
+  #minimap { width: 100%; height: 100%; display: block; image-rendering: pixelated; cursor: crosshair; }
+  .compass { position: absolute; top: -9px; left: 50%; transform: translateX(-50%); font: 400 11px/1 var(--display); color: var(--muted); background: var(--panel-solid); padding: 0 4px; }
+
+  #selection { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  #selection h2 { margin: 0; font: 400 20px/1.1 var(--display); text-wrap: balance; }
+  .status { margin: 0; color: var(--ink); font-size: 15px; }
+  .hint { margin: 0; color: var(--muted); font-size: 15px; max-width: 60ch; }
+  .facts { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0; }
+  .facts div { display: flex; gap: 6px; align-items: baseline; }
+  .facts dt { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .facts dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .hpbar { height: 5px; width: min(260px, 100%); background: #20261b; border: 1px solid var(--line); }
+  .hpbar span { display: block; height: 100%; background: var(--good); }
+  .hpbar.mid span { background: var(--accent); }
+  .hpbar.bad span { background: var(--danger); }
+  .roster { display: flex; flex-wrap: wrap; gap: 4px; }
+  .mini {
+    width: 28px; height: 24px; display: grid; place-items: center; font-size: 12px; font-weight: 700;
+    border: 1px solid var(--line-hi); border-bottom: 3px solid var(--good); background: rgba(0, 0, 0, 0.25);
+  }
+  .mini.mid { border-bottom-color: var(--accent); }
+  .mini.bad { border-bottom-color: var(--danger); }
+
+  #commands { min-width: 0; }
+  .card-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 6px; }
+  .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+  .cmd {
+    position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+    text-align: left; padding: 6px 7px 5px; min-height: 52px;
+    background: #1b2017; border: 1px solid var(--line-hi); border-radius: 3px; cursor: pointer;
+  }
+  .cmd:hover:not(:disabled) { border-color: var(--accent); background: #22281c; }
+  .cmd[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .cmd:disabled { opacity: 0.42; cursor: not-allowed; }
+  .cmd kbd { position: absolute; top: 4px; right: 4px; }
+  .cmd-name { font-weight: 600; font-size: 14px; line-height: 1.1; padding-right: 22px; }
+  .cmd-danger { border-color: rgba(208, 83, 60, 0.55); }
+  .cmd-quiet { background: transparent; }
+  .cost { font-size: 12px; color: var(--muted); line-height: 1.2; }
+  .cost-wood { color: var(--wood); }
+  .cost-stone { color: var(--stone); }
+  .cost-food { color: var(--food); }
+  .cost-scrap { color: var(--scrap); }
+
+  #tooltip {
+    position: fixed; z-index: 20; max-width: 240px; padding: 8px 10px; pointer-events: none;
+    background: var(--panel-solid); border: 1px solid var(--line-hi); font-size: 14px;
+  }
+  #tooltip strong { font-family: var(--display); font-weight: 400; font-size: 15px; }
+  #tooltip p { margin: 4px 0 0; color: var(--muted); }
+
+  /* ---------- telas ---------- */
+  .overlay {
+    position: absolute; inset: 0; z-index: 10; display: grid; place-items: center;
+    background: radial-gradient(ellipse at center, rgba(13, 16, 12, 0.55), rgba(8, 10, 7, 0.92));
+    padding: 24px max(16px, env(safe-area-inset-right, 0px)) 24px max(16px, env(safe-area-inset-left, 0px));
+    overflow-y: auto;
+  }
+  .sheet {
+    width: min(640px, 100%);
+    background: var(--panel-solid);
+    border: 1px solid var(--line-hi);
+    padding: 28px 30px;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  }
+  .sheet h1 { margin: 0; font: 400 clamp(38px, 7vw, 64px)/0.95 var(--display); letter-spacing: 0.01em; color: var(--ink); text-wrap: balance; }
+  .sheet h1 em { font-style: normal; color: var(--accent); }
+  .sheet h2 { margin: 0 0 4px; font: 400 32px/1 var(--display); text-wrap: balance; }
+  .kicker { font-size: 13px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--muted); margin: 0 0 10px; }
+  .lede { font-size: 18px; line-height: 1.4; max-width: 56ch; margin: 16px 0 0; color: var(--ink); }
+  .controls-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 22px; margin: 20px 0 0; font-size: 15px; }
+  .controls-list div { display: flex; gap: 10px; align-items: baseline; border-top: 1px solid var(--line); padding-top: 6px; }
+  .controls-list dt { min-width: 92px; color: var(--accent); font-weight: 600; }
+  .controls-list dd { margin: 0; color: var(--muted); }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; align-items: center; }
+  .btn {
+    background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 3px;
+    padding: 10px 22px; font-weight: 700; font-size: 17px; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn-ghost { background: transparent; color: var(--ink); border: 1px solid var(--line-hi); }
+  .note { color: var(--muted); font-size: 14px; }
+  #end-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 20px 0 0; }
+  #end-stats div { border-top: 1px solid var(--line); padding-top: 6px; }
+  #end-stats dt { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  #end-stats dd { margin: 2px 0 0; font: 400 28px/1 var(--display); font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 900px) {
+    #bottom { grid-template-columns: auto minmax(0, 1fr); }
+    #commands { grid-column: 1 / -1; }
+    .minimap-wrap { width: 112px; height: 112px; }
+    .brand { display: none; }
+    #toast { bottom: 300px; }
+  }
+  @media (max-width: 560px) {
+    .controls-list, #end-stats { grid-template-columns: minmax(0, 1fr); }
+    .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .chip-label { display: none; }
+    .sheet { padding: 22px 18px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .banner.danger { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="game" tabindex="0" aria-label="Mapa do jogo"></canvas>
+
+  <header id="topbar">
+    <div class="brand">Age of Zombies</div>
+    <div id="resources"></div>
+    <div class="clock" id="clock-wrap">
+      <span id="day">Dia 1</span>
+      <span id="clock">06:00</span>
+      <div class="clock-bar" aria-hidden="true"><div id="clock-fill"></div></div>
+    </div>
+    <div class="controls">
+      <button type="button" class="tbtn" data-speed="1" aria-pressed="true">1×</button>
+      <button type="button" class="tbtn" data-speed="2" aria-pressed="false">2×</button>
+      <button type="button" class="tbtn" data-speed="3" aria-pressed="false">3×</button>
+      <button type="button" class="tbtn" id="btn-pause">Pausar</button>
+      <button type="button" class="tbtn" id="btn-help" aria-label="Controles">?</button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" hidden></div>
+  <ul id="messages" aria-live="polite"></ul>
+  <div id="toast" hidden></div>
+
+  <footer id="bottom">
+    <div class="minimap-wrap">
+      <span class="compass">N</span>
+      <canvas id="minimap" width="256" height="256" aria-label="Minimapa"></canvas>
+    </div>
+    <section id="selection" aria-live="polite"></section>
+    <section id="commands"></section>
+  </footer>
+
+  <div id="tooltip" hidden></div>
+
+  <div id="screen-start" class="overlay">
+    <div class="sheet">
+      <p class="kicker">Diário de campo · dia 1</p>
+      <h1>Age of <em>Zombies</em></h1>
+      <p class="lede">Cinco sobreviventes, uma fogueira e uma clareira no meio do mato. De dia vocês cortam lenha, quebram pedra e saqueiam as cidades abandonadas. À noite os mortos vêm em horda. Aguente dez noites.</p>
+      <dl class="controls-list">
+        <div><dt>Clique / arraste</dt><dd>seleciona sobreviventes</dd></div>
+        <div><dt>Botão direito</dt><dd>mover, coletar, saquear, atacar</dd></div>
+        <div><dt>B D C M G T H</dt><dd>construções (ou pelo painel)</dd></div>
+        <div><dt>Arrastar cerca</dt><dd>constrói uma linha inteira</dd></div>
+        <div><dt>Setas / bordas</dt><dd>movem a câmera; roda dá zoom</dd></div>
+        <div><dt>R · E · X</dt><dd>recrutar · todos · parar</dd></div>
+        <div><dt>Ctrl+1…9</dt><dd>cria grupo; 1…9 seleciona</dd></div>
+        <div><dt>Espaço · P</dt><dd>último alerta · pausar</dd></div>
+      </dl>
+      <div class="actions">
+        <button type="button" class="btn" id="btn-start">Começar</button>
+        <span class="note">Melhor com mouse e teclado.</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-help" class="overlay" hidden>
+    <div class="sheet">
+      <p class="kicker">Como sobreviver</p>
+      <h2>Manual do acampamento</h2>
+      <dl class="controls-list">
+        <div><dt>Madeira</dt><dd>árvores; base de quase tudo</dd></div>
+        <div><dt>Pedra</dt><dd>rochas; muros e torres</dd></div>
+        <div><dt>Comida</dt><dd>casas, mercados e hortas</dd></div>
+        <div><dt>Sucata</dt><dd>oficinas; portões e torres</dd></div>
+        <div><dt>Amanhecer</dt><dd>cada pessoa come 4</dd></div>
+        <div><dt>Hordas</dt><dd>vêm de um lado do mapa</dd></div>
+        <div><dt>Muros</dt><dd>a horda bate no ponto mais fraco</dd></div>
+        <div><dt>Mordidos</dt><dd>podem se levantar como zumbis</dd></div>
+        <div><dt>Casas</dt><dd>às vezes têm alguém escondido</dd></div>
+        <div><dt>Botão direito</dt><dd>em obra danificada: consertar</dd></div>
+      </dl>
+      <div class="actions"><button type="button" class="btn" id="btn-help-close">Voltar</button></div>
+    </div>
+  </div>
+
+  <div id="screen-pause" class="overlay" hidden>
+    <div class="sheet">
+      <p class="kicker">Pausado</p>
+      <h2>Respire fundo.</h2>
+      <div class="actions">
+        <button type="button" class="btn" id="btn-resume">Continuar</button>
+        <button type="button" class="btn btn-ghost" id="btn-restart">Novo mapa</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-end" class="overlay" hidden>
+    <div class="sheet">
+      <p class="kicker">Relatório final</p>
+      <h2 id="end-title">Fim da linha</h2>
+      <p class="lede" id="end-reason"></p>
+      <dl id="end-stats"></dl>
+      <div class="actions">
+        <button type="button" class="btn" id="btn-again">Novo mapa</button>
+        <button type="button" class="btn btn-ghost" id="btn-continue" hidden>Continuar jogando</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

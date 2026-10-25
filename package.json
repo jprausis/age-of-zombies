@@ -1,0 +1,11 @@
+{
+  "name": "age-of-zombies",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "RTS de sobrevivência zumbi no navegador",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node tests/sim.test.mjs"
+  }
+}
