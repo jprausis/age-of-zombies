@@ -1,6 +1,6 @@
 # Age of Zombies
 
-RTS de sobrevivência no navegador. Você comanda um pequeno grupo de sobreviventes: monta um acampamento, junta recursos, saqueia cidades abandonadas e se fortifica contra as hordas de zumbis que chegam toda noite. A meta é aguentar 10 noites.
+RTS de sobrevivência no navegador, em visão isométrica. Você comanda um pequeno grupo de sobreviventes: monta um acampamento, junta recursos, saqueia cidades abandonadas e se fortifica contra as hordas de zumbis que chegam toda noite. A meta é aguentar 10 noites.
 
 Feito com HTML5 Canvas e JavaScript puro (módulos ES), sem dependências e sem etapa de build.
 
@@ -52,14 +52,16 @@ src/map.js          grade do mundo (terreno, recursos, ocupação, névoa)
 src/pathfinding.js  A* com suavização de caminho
 src/flowfield.js    campo de fluxo (Dijkstra) usado pelas hordas
 src/heap.js         heap binário mínimo
-src/render.js       desenho no canvas: chão em chunks, objetos, luz noturna, névoa, minimapa
+src/iso.js          projeção isométrica 2:1 (tile <-> pixel)
+src/render.js       desenho isométrico: chão em chunks pré-projetados, prédios em caixas 3D,
+                    sprites de árvores/pedras, ordenação por profundidade, luz noturna, névoa, minimapa
 src/input.js        mouse, teclado, seleção, câmera e posicionamento de obras
 src/ui.js           HUD em DOM: recursos, relógio, seleção, botões e telas
 src/main.js         laço principal (simulação em passo fixo de 1/30 s)
 tests/sim.test.mjs  teste de fumaça da simulação
 ```
 
-A simulação (`game.js` e afins) não toca no DOM, então pode ser testada no Node e trocada de renderizador no futuro.
+A simulação (`game.js` e afins) não toca no DOM e trabalha em coordenadas de tile; a projeção isométrica existe só no `render.js` e no `input.js`. Por isso ela é testada no Node.
 
 ## Próximos passos possíveis
 

@@ -1,8 +1,12 @@
-import { TILE, MAP_W, MAP_H, BUILDINGS, BUILD_ORDER } from './config.js';
+import { MAP_W, MAP_H, BUILDINGS, BUILD_ORDER, T } from './config.js';
+import { HW, HH, toIso, fromIso } from './iso.js';
 
 const KEY_TO_BUILD = Object.fromEntries(BUILD_ORDER.map((t) => [BUILDINGS[t].key, t]));
 const EDGE = 10;
 const PAN_SPEED = 900; // px de tela por segundo
+// Altura aproximada (px isométricos) de cada coisa, para clicar no telhado e não só no chão.
+const HEIGHT = { hq: 40, tent: 32, depot: 24, farm: 10, tower: 92, palisade: 32, stonewall: 28, gate: 30 };
+const RUIN_HEIGHT = 44;
 
 export class Input {
   constructor(canvas, state, renderer, hud) {
@@ -22,21 +26,31 @@ export class Input {
 
   toWorld(sx, sy) {
     const { cam } = this.state;
-    return { wx: (sx / cam.zoom + cam.x) / TILE, wy: (sy / cam.zoom + cam.y) / TILE };
+    const [wx, wy] = fromIso(sx / cam.zoom + cam.x, sy / cam.zoom + cam.y);
+    return { wx, wy };
+  }
+
+  toScreen(tx, ty) {
+    const { cam } = this.state;
+    const [ix, iy] = toIso(tx, ty);
+    return [(ix - cam.x) * cam.zoom, (iy - cam.y) * cam.zoom];
   }
 
   centerOn(tx, ty) {
     const { cam } = this.state;
-    cam.x = tx * TILE - this.renderer.w / cam.zoom / 2;
-    cam.y = ty * TILE - this.renderer.h / cam.zoom / 2;
+    const [ix, iy] = toIso(tx, ty);
+    cam.x = ix - this.renderer.w / cam.zoom / 2;
+    cam.y = iy - this.renderer.h / cam.zoom / 2;
     this.clamp();
   }
 
+  // O mapa é um losango: x vai de -MAP_H*HW a MAP_W*HW e y de 0 a (MAP_W+MAP_H)*HH.
   clamp() {
     const { cam } = this.state;
     const vw = this.renderer.w / cam.zoom, vh = this.renderer.h / cam.zoom;
-    cam.x = Math.max(-160, Math.min(MAP_W * TILE - vw + 160, cam.x));
-    cam.y = Math.max(-160, Math.min(MAP_H * TILE - vh + 240, cam.y));
+    const minX = -MAP_H * HW - 200, maxX = MAP_W * HW + 200, minY = -200, maxY = (MAP_W + MAP_H) * HH + 300;
+    cam.x = Math.max(minX, Math.min(maxX - vw, cam.x));
+    cam.y = Math.max(minY, Math.min(maxY - vh, cam.y));
   }
 
   bind() {
@@ -73,7 +87,7 @@ export class Input {
         this.cancelBuild();
         return;
       }
-      this.command(wx, wy);
+      this.command(p);
       return;
     }
     if (e.button !== 0) return;
@@ -128,11 +142,11 @@ export class Input {
     e.preventDefault();
     const s = this.state;
     const p = this.local(e);
-    const before = this.toWorld(p.x, p.y);
+    const ix = p.x / s.cam.zoom + s.cam.x, iy = p.y / s.cam.zoom + s.cam.y;
     const factor = Math.exp(-e.deltaY * 0.0015);
-    s.cam.zoom = Math.max(0.6, Math.min(2, s.cam.zoom * factor));
-    s.cam.x = before.wx * TILE - p.x / s.cam.zoom;
-    s.cam.y = before.wy * TILE - p.y / s.cam.zoom;
+    s.cam.zoom = Math.max(0.55, Math.min(1.6, s.cam.zoom * factor));
+    s.cam.x = ix - p.x / s.cam.zoom;
+    s.cam.y = iy - p.y / s.cam.zoom;
     this.clamp();
   }
 
@@ -205,29 +219,62 @@ export class Input {
     if (units.length) s.selected = null;
   }
 
-  pick(wx, wy) {
+  // Seleção na tela: pessoas pelo corpo, construções pelo volume (amostra o chão abaixo do cursor).
+  pick(p) {
     const g = this.game;
     const m = g.map;
-    let best = null, bd = 0.55;
-    for (const u of g.units) {
-      const d = Math.hypot(u.x - wx, u.y - wy);
-      if (d < bd) {
-        bd = d;
-        best = u;
-      }
+    const z = this.state.cam.zoom;
+    const body = (e, s) => {
+      const [x, y] = this.toScreen(e.x, e.y);
+      return Math.abs(p.x - x) < (9 * s + 3) * z && p.y < y + 5 * z && p.y > y - 32 * s * z;
+    };
+    let best = null, bd = -Infinity;
+    for (const u of g.units) if (body(u, 1) && u.x + u.y > bd) { bd = u.x + u.y; best = u; }
+    if (best) return best;
+    for (const zb of g.zombies) {
+      if (!m.visible[m.idx(Math.floor(zb.x), Math.floor(zb.y))]) continue;
+      if (body(zb, zb.type === 'brute' ? 1.45 : 1) && zb.x + zb.y > bd) { bd = zb.x + zb.y; best = zb; }
     }
     if (best) return best;
-    const z = g.zombieAt(wx, wy);
-    if (z) return z;
-    const tx = Math.floor(wx), ty = Math.floor(wy);
-    if (!m.inBounds(tx, ty) || !m.explored[m.idx(tx, ty)]) return null;
-    return m.occ[m.idx(tx, ty)];
+    return this.pickVolume(p, (tx, ty, off) => {
+      const o = m.occ[m.idx(tx, ty)];
+      if (!o) return null;
+      const h = o.kind === 'ruin' ? RUIN_HEIGHT : HEIGHT[o.type] || 30;
+      return off <= h ? { hit: o, d: o.x + o.y + (o.w + o.h) / 2 } : null;
+    });
+  }
+
+  // Árvore ou pedra sob o cursor (a copa fica acima do tile).
+  pickResource(p) {
+    const m = this.game.map;
+    return this.pickVolume(p, (tx, ty, off) => {
+      const t = m.tiles[m.idx(tx, ty)];
+      if (t === T.TREE && off <= 56) return { hit: [tx, ty], d: tx + ty };
+      if (t === T.ROCK && off <= 20) return { hit: [tx, ty], d: tx + ty };
+      return null;
+    });
+  }
+
+  pickVolume(p, test) {
+    const m = this.game.map;
+    const { cam } = this.state;
+    let best = null, bd = -Infinity;
+    for (let off = 0; off <= 96; off += 4) {
+      const [wx, wy] = fromIso(p.x / cam.zoom + cam.x, p.y / cam.zoom + cam.y + off);
+      const tx = Math.floor(wx), ty = Math.floor(wy);
+      if (!m.inBounds(tx, ty) || !m.explored[m.idx(tx, ty)]) continue;
+      const r = test(tx, ty, off);
+      if (r && r.d > bd) {
+        bd = r.d;
+        best = r.hit;
+      }
+    }
+    return best;
   }
 
   clickSelect(p, shift) {
     const s = this.state;
-    const { wx, wy } = this.toWorld(p.x, p.y);
-    const hit = this.pick(wx, wy);
+    const hit = this.pick(p);
     const now = performance.now();
     if (hit && hit.kind === 'unit') {
       if (this.lastClick.id === hit.id && now - this.lastClick.t < 350) {
@@ -247,30 +294,47 @@ export class Input {
   }
 
   unitsOnScreen() {
-    const { cam } = this.state;
-    const x0 = cam.x / TILE, y0 = cam.y / TILE;
-    const x1 = x0 + this.renderer.w / cam.zoom / TILE, y1 = y0 + this.renderer.h / cam.zoom / TILE;
-    return this.game.units.filter((u) => u.x >= x0 && u.x <= x1 && u.y >= y0 && u.y <= y1);
+    return this.game.units.filter((u) => {
+      const [x, y] = this.toScreen(u.x, u.y);
+      return x >= 0 && x <= this.renderer.w && y >= 0 && y <= this.renderer.h;
+    });
   }
 
   boxSelect(b, shift) {
-    const a = this.toWorld(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1));
-    const c = this.toWorld(Math.max(b.x0, b.x1), Math.max(b.y0, b.y1));
-    const units = this.game.units.filter((u) => u.x >= a.wx && u.x <= c.wx && u.y >= a.wy && u.y <= c.wy);
+    const x0 = Math.min(b.x0, b.x1), x1 = Math.max(b.x0, b.x1), y0 = Math.min(b.y0, b.y1), y1 = Math.max(b.y0, b.y1);
+    const units = this.game.units.filter((u) => {
+      const [x, y] = this.toScreen(u.x, u.y);
+      const cy = y - 14 * this.state.cam.zoom; // meio do corpo
+      return x >= x0 && x <= x1 && cy >= y0 && cy <= y1;
+    });
     if (units.length) this.select(units, shift);
     else if (!shift) this.clearSelection();
   }
 
-  command(wx, wy) {
+  command(p) {
     const s = this.state;
     const units = [...s.selection];
     if (!units.length) return;
-    const kind = this.game.orderSmart(units, wx, wy);
+    const g = this.game;
+    const hit = this.pick(p);
+    let wx, wy, kind;
+    if (hit && hit.kind !== 'unit') {
+      [wx, wy] = hit.kind === 'zombie' ? [hit.x, hit.y] : [hit.x + hit.w / 2, hit.y + hit.h / 2];
+      kind = g.orderSmart(units, wx, wy, hit);
+    } else {
+      const res = this.pickResource(p);
+      if (res) [wx, wy] = [res[0] + 0.5, res[1] + 0.5];
+      else ({ wx, wy } = this.toWorld(p.x, p.y));
+      kind = g.orderSmart(units, wx, wy);
+    }
     if (kind) s.markers.push({ x: wx, y: wy, t: performance.now() / 1000, kind });
   }
 
   commandAt(tx, ty) {
-    this.command(tx + 0.5, ty + 0.5);
+    const units = [...this.state.selection];
+    if (!units.length) return;
+    const kind = this.game.orderSmart(units, tx + 0.5, ty + 0.5);
+    if (kind) this.state.markers.push({ x: tx + 0.5, y: ty + 0.5, t: performance.now() / 1000, kind });
   }
 
   // ---------- construção ----------

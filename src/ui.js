@@ -1,4 +1,4 @@
-import { BUILDINGS, BUILD_ORDER, RES_NAMES, RES_ORDER, RECRUIT, UNIT, WIN_DAY, MAP_W, DAY_LENGTH, NIGHT_LENGTH } from './config.js';
+import { BUILDINGS, BUILD_ORDER, RES_NAMES, RES_ORDER, RECRUIT, UNIT, WIN_DAY, DAY_LENGTH, NIGHT_LENGTH } from './config.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -54,7 +54,7 @@ export class HUD {
     const mm = $('minimap');
     const toTile = (e) => {
       const r = mm.getBoundingClientRect();
-      return [((e.clientX - r.left) / r.width) * MAP_W, ((e.clientY - r.top) / r.height) * MAP_W];
+      return this.actions.miniToTile((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
     };
     let dragging = false;
     mm.addEventListener('contextmenu', (e) => e.preventDefault());

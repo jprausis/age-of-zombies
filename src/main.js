@@ -10,7 +10,7 @@ const minimap = document.getElementById('minimap');
 
 const state = {
   game: new Game(),
-  cam: { x: 0, y: 0, zoom: 1 },
+  cam: { x: 0, y: 0, zoom: 0.9 },
   selection: new Set(),
   selected: null,
   buildType: null,
@@ -52,14 +52,15 @@ const hud = new HUD(state, {
   centerOn: (tx, ty) => input.centerOn(tx, ty),
   commandAt: (tx, ty) => input.commandAt(tx, ty),
   startBuild: (type) => input.startBuild(type),
+  miniToTile: (u, v) => renderer.miniToTile(u, v),
 });
 input = new Input(canvas, state, renderer, hud);
 // Acesso ao estado pelo console: abra com ?debug na URL.
-if (new URLSearchParams(location.search).has('debug')) window.aoz = { state, input };
+if (new URLSearchParams(location.search).has('debug')) window.aoz = { state, input, renderer };
 
 function centerOnCamp() {
   const hq = state.game.hq;
-  if (hq) input.centerOn(hq.x + 1.5, hq.y + 2.5);
+  if (hq) input.centerOn(hq.x + 1.5, hq.y + 1.5);
 }
 
 function resize() {
@@ -94,7 +95,7 @@ function frame(now) {
   renderer.draw(state, now / 1000);
   if (now - miniT > 200) {
     miniT = now;
-    renderer.drawMinimap(minimap, state, now / 1000);
+    renderer.drawMinimap(minimap, state);
   }
   hud.update(now);
   requestAnimationFrame(frame);

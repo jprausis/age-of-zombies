@@ -1016,7 +1016,7 @@ export class Game {
             z.hitT = 0.15;
             b.cd = b.def.cooldown;
             b.angle = Math.atan2(z.y - cy, z.x - cx);
-            this.tracers.push({ x1: cx, y1: cy - 0.5, x2: z.x, y2: z.y, t: 0.1, kind: 'tower' });
+            this.tracers.push({ x1: cx, y1: cy, x2: z.x, y2: z.y, t: 0.1, kind: 'tower' });
           }
         }
       }
@@ -1136,13 +1136,14 @@ export class Game {
     return best;
   }
 
-  // Ordem contextual (botão direito). Retorna o tipo de ordem para o marcador visual.
-  orderSmart(units, wx, wy) {
+  // Ordem contextual (botão direito). `picked` é o que o jogador clicou na tela, se já foi
+  // identificado (zumbi, prédio ou ruína). Retorna o tipo de ordem para o marcador visual.
+  orderSmart(units, wx, wy, picked = null) {
     if (!units.length) return null;
     const tx = Math.floor(wx), ty = Math.floor(wy);
     const m = this.map;
     if (!m.inBounds(tx, ty)) return null;
-    const z = this.zombieAt(wx, wy);
+    const z = picked ? (picked.kind === 'zombie' ? picked : null) : this.zombieAt(wx, wy);
     if (z) {
       for (const u of units) this.setTask(u, { kind: 'attack', z, repath: 0 });
       return 'attack';
@@ -1152,7 +1153,7 @@ export class Game {
       this.orderMove(units, tx, ty);
       return 'move';
     }
-    const o = m.occ[i];
+    const o = picked || m.occ[i];
     if (o && o.kind === 'building') {
       if (!o.complete || o.hp < o.maxHp) {
         for (const u of units) this.setTask(u, { kind: 'build', b: o });
