@@ -49,6 +49,7 @@ export class Game {
     this.texts = [];
     this.corpses = [];
     this.pings = [];
+    this.sfx = []; // eventos de som, consumidos pelo módulo de áudio
     this.pending = [];
     this.nextId = 1;
     this.flow = null;
@@ -161,6 +162,11 @@ export class Game {
   msg(text, kind = 'info') {
     this.messages.push({ text, kind, t: this.time, id: this.nextId++ });
     if (this.messages.length > 40) this.messages.shift();
+  }
+
+  sound(type, x, y, extra) {
+    if (this.sfx.length > 120) this.sfx.splice(0, 60);
+    this.sfx.push({ type, x, y, ...extra });
   }
 
   floatText(x, y, text, color) {
@@ -296,7 +302,10 @@ export class Game {
     if (!this.hordeWarned && this.clock >= DAY_LENGTH - 25) {
       this.hordeWarned = true;
       this.hordeSide = this.rng.int(0, 3);
-      if (this.hordeTonight) this.msg(`Está escurecendo. Uma horda virá do ${SIDES[this.hordeSide]}!`, 'warn');
+      if (this.hordeTonight) {
+        this.msg(`Está escurecendo. Uma horda virá do ${SIDES[this.hordeSide]}!`, 'warn');
+        this.sound('horde_warning');
+      }
       else this.msg('Está escurecendo. Fiquem perto da fogueira.', 'info');
       if (this.res.food < this.foodNeed) {
         this.msg(`Falta comida: o grupo come ${this.foodNeed} ao amanhecer e só há ${Math.floor(this.res.food)}.`, 'warn');
@@ -317,6 +326,7 @@ export class Game {
     }
     const n = this.spawnHorde(this.hordeSide, k);
     this.msg(`Anoiteceu. ${n} zumbis vêm do ${SIDES[this.hordeSide]}.`, 'danger');
+    this.sound('horde_start');
     // O barulho do acampamento atrai os errantes que estão por perto.
     const hq = this.hq;
     if (!hq) return;
@@ -547,6 +557,7 @@ export class Game {
     u.aimT = 0.25;
     u.facing = Math.atan2(z.y - u.y, z.x - u.x);
     this.tracers.push({ x1: u.x + Math.cos(u.facing) * 0.4, y1: u.y + Math.sin(u.facing) * 0.4, x2: z.x, y2: z.y, t: 0.08, kind: 'gun' });
+    this.sound('shot', u.x, u.y);
     if (!z.target || z.target.dead) {
       z.target = u;
       z.chaseT = 6;
@@ -894,7 +905,10 @@ export class Game {
       if (z.target && (z.target.dead || z.target.hp <= 0)) z.target = null;
       const aggro = z.mode === 'horde' ? 5 : this.isNight ? 8 : 6;
       if (z.target && z.chaseT <= 0 && dist(z, z.target) > aggro * 1.8) z.target = null;
-      if (!z.target) z.target = this.nearestUnit(z.x, z.y, aggro);
+      if (!z.target) {
+        z.target = this.nearestUnit(z.x, z.y, aggro);
+        if (z.target && this.rng() < 0.6) this.sound('groan', z.x, z.y, { kind: z.type });
+      }
     }
 
     const tgt = z.target;
@@ -903,6 +917,7 @@ export class Game {
       if (z.atkCd <= 0) {
         z.atkCd = def.cooldown;
         this.damageUnit(tgt, def.dmg);
+        this.sound('bite', tgt.x, tgt.y);
       }
       return;
     }
@@ -917,6 +932,7 @@ export class Game {
             z.hp -= z.bash.def.thorns;
             z.hitT = 0.15;
           }
+          this.sound('bash', z.x, z.y, { stone: z.bash.type === 'stonewall' || (z.bash.type === 'gate' && z.bash.level > 0) });
           this.damageBuilding(z.bash, def.dmg * def.buildingMult);
         }
         return;
@@ -1047,6 +1063,7 @@ export class Game {
             b.cd = b.def.cooldown;
             b.angle = Math.atan2(z.y - cy, z.x - cx);
             this.tracers.push({ x1: cx, y1: cy, x2: z.x, y2: z.y, t: 0.1, kind: 'tower' });
+            this.sound(b.level >= 2 ? 'mg' : 'rifle', cx, cy);
           }
         }
       }
@@ -1311,6 +1328,7 @@ export class Game {
         z.dead = true;
         this.stats.kills++;
         this.corpses.push({ x: z.x, y: z.y, t: 0, kind: z.type, a: z.facing });
+        this.sound('zdeath', z.x, z.y, { kind: z.type });
         return false;
       });
       if (this.corpses.length > 220) this.corpses.splice(0, this.corpses.length - 220);

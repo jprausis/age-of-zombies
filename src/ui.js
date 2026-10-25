@@ -42,6 +42,8 @@ export class HUD {
       btn.addEventListener('click', () => this.setSpeed(Number(btn.dataset.speed)));
     }
     $('btn-pause').addEventListener('click', () => this.togglePause());
+    $('btn-sound').addEventListener('click', () => this.toggleSound());
+    $('btn-sound').setAttribute('aria-pressed', String(this.actions.sound.enabled));
     $('btn-help').addEventListener('click', () => this.showHelp(true));
     $('btn-idle').addEventListener('click', () => {
       const idle = this.game.units.filter((u) => !u.task);
@@ -126,6 +128,14 @@ export class HUD {
       this.state.paused = show;
       $('btn-pause').textContent = show ? 'Continuar' : 'Pausar';
     }
+  }
+
+  toggleSound() {
+    const s = this.actions.sound;
+    s.unlock();
+    s.setEnabled(!s.enabled);
+    $('btn-sound').setAttribute('aria-pressed', String(s.enabled));
+    this.toast(s.enabled ? 'Som ligado.' : 'Som desligado.');
   }
 
   upgrade() {

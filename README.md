@@ -31,7 +31,7 @@ npm test
 | Câmera | setas, mouse nas bordas, botão do meio arrastando, roda para zoom, clique no minimapa |
 | Evoluir | selecione a construção e use `U` (ou o botão no painel). Quem estiver parado vai trabalhar na reforma |
 | Grupo | painel à direita: clique seleciona, duplo clique leva a câmera; `.` vai para o próximo parado |
-| Outros | `E` todos, `X` parar, `R` recrutar, `Ctrl+1…9` / `1…9` grupos, `Espaço` último alerta, `P` pausar, `+`/`-` velocidade, `Del` demolir/cancelar, `F` quadros por segundo |
+| Outros | `E` todos, `X` parar, `R` recrutar, `Ctrl+1…9` / `1…9` grupos, `Espaço` último alerta, `P` pausar, `+`/`-` velocidade, `Del` demolir/cancelar, `F` quadros por segundo, `N` liga/desliga o som |
 
 ### Regras principais
 
@@ -39,6 +39,7 @@ npm test
 - **Ruínas:** casas, mercadinhos, oficinas e cabanas têm recursos. Às vezes há zumbis escondidos lá dentro, e às vezes um sobrevivente que entra para o grupo (se houver abrigo).
 - **Dia e noite:** o dia dura 150 s e a noite 90 s. A primeira noite é calma; as hordas começam na segunda. Uns 25 s antes de escurecer aparece o aviso da direção da horda. Ao anoitecer, a horda nasce na borda do mapa e os errantes próximos se juntam a ela.
 - **Evoluções:** acampamento (3 níveis), barraca → cabana de toras → casa de tijolos, depósito → armazém (+20% por entrega), cerca → com espetos (fere quem bate), muro → muralha, portão → de ferro, torre → torre de tiro → ninho de metralhadora, horta → irrigada → estufa.
+- **Sons:** tiros (espingarda, rifle da torre com eco, rajadas da metralhadora), gemidos, mordidas, pancadas em muros, sino de alerta antes da horda e corneta quando ela chega. Tudo sintetizado com Web Audio, sem arquivos; volume e lado dependem da distância até a câmera.
 - **Ícones:** sobre cada sobrevivente aparece o que ele está fazendo; o anel em volta enche conforme a carga. Âmbar piscando = parado.
 - **Hordas:** seguem um campo de fluxo até os prédios do acampamento. Muros entram no cálculo como obstáculo caro: se houver brecha, a horda passa por ela; se o acampamento estiver fechado, ela ataca o trecho mais fraco. A partir do dia 2 surgem corredores, e do dia 3 brutamontes.
 - **Comida:** a cada amanhecer cada pessoa come 4. Se faltar, todos perdem vida.
@@ -65,6 +66,7 @@ src/draw/buildings.js  ruínas e construções em cada nível de evolução, and
 src/draw/actors.js  sobreviventes, zumbis e ícones de atividade
 src/input.js        mouse, teclado, seleção, câmera e posicionamento de obras
 src/ui.js           HUD em DOM: recursos, relógio, seleção, botões e telas
+src/audio.js        efeitos sonoros sintetizados (Web Audio) a partir dos eventos da simulação
 src/main.js         laço principal (simulação em passo fixo de 1/30 s)
 tests/sim.test.mjs  teste de fumaça da simulação
 ```
@@ -73,7 +75,7 @@ A simulação (`game.js` e afins) não toca no DOM e trabalha em coordenadas de 
 
 ## Próximos passos possíveis
 
-- Sons (tiros, gemidos, sino de alerta) com WebAudio
+- Trilha sonora ambiente (vento, grilos à noite)
 - Armas e melhorias usando sucata (oficina, arsenal)
 - Profissões: lenhador, batedor, atirador, médico
 - Controles por toque (toque longo como botão direito)

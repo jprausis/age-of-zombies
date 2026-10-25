@@ -169,6 +169,10 @@ export class Input {
       this.hud.togglePause();
       return;
     }
+    if (k === 'n') {
+      this.hud.toggleSound();
+      return;
+    }
     if (k === 'f') {
       const el = document.getElementById('fps');
       el.hidden = !el.hidden;

@@ -2,6 +2,7 @@ import { Game } from './game.js';
 import { Renderer } from './render.js';
 import { Input } from './input.js';
 import { HUD } from './ui.js';
+import { Sound } from './audio.js';
 
 const STEP = 1 / 30; // passo fixo da simulação
 
@@ -31,14 +32,17 @@ const state = {
 };
 
 const renderer = new Renderer(canvas, state.game);
+const sound = new Sound();
 let input;
 const hud = new HUD(state, {
   start() {
+    sound.unlock();
     state.started = true;
     document.getElementById('screen-start').hidden = true;
     canvas.focus();
   },
   newGame() {
+    sound.unlock();
     state.game = new Game();
     renderer.setGame(state.game);
     Object.assign(state, {
@@ -56,6 +60,7 @@ const hud = new HUD(state, {
   select: (units) => input.select(units),
   nextIdle: () => input.nextIdle(),
   hoverInfo: () => input.hoverTarget(),
+  sound,
 });
 input = new Input(canvas, state, renderer, hud);
 // Acesso ao estado pelo console: abra com ?debug na URL.
@@ -103,6 +108,12 @@ function frame(now) {
     }
     if (steps === 12) acc = 0;
   }
+  if (running) {
+    const L = Sound.listener(state, renderer);
+    sound.consume(g.sfx, L, dt);
+    sound.ambient(dt * state.speed, g, L);
+  }
+  g.sfx.length = 0;
   input.update(dt);
   const t0 = performance.now();
   renderer.draw(state, now / 1000);
