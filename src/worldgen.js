@@ -144,6 +144,17 @@ export function generateWorld(game, rng) {
     if (placeRuin('cabana', x, y, 2, 2)) cabins++;
   }
 
+  // Duas casas a uma caminhada curta, para garantir comida no começo.
+  let near = 0;
+  for (let tries = 0; near < 2 && tries < 400; tries++) {
+    const a = rng() * Math.PI * 2, d = rng.range(11, 17);
+    const r = placeRuin('casa', Math.round(cx + Math.cos(a) * d) - 1, Math.round(cy + Math.sin(a) * d) - 1, 2, 2);
+    if (!r) continue;
+    r.lurkers = 0;
+    r.loot.food = Math.max(r.loot.food, 25);
+    near++;
+  }
+
   const hq = game.createBuilding('hq', cx - 1, cy - 1, true);
   for (let i = 0; i < START_UNITS; i++) {
     const a = (i / START_UNITS) * Math.PI * 2;

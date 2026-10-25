@@ -169,6 +169,11 @@ export class Input {
       this.hud.togglePause();
       return;
     }
+    if (k === 'f') {
+      const el = document.getElementById('fps');
+      el.hidden = !el.hidden;
+      return;
+    }
     if (s.paused || g.over) return;
 
     if (/^[0-9]$/.test(k)) {
@@ -193,7 +198,9 @@ export class Input {
       this.startBuild(KEY_TO_BUILD[k]);
       return;
     }
-    if (k === 'x') g.stop([...s.selection]);
+    if (k === '.') this.nextIdle();
+    else if (k === 'u') this.hud.upgrade();
+    else if (k === 'x') g.stop([...s.selection]);
     else if (k === 'r') this.hud.recruit();
     else if (k === 'e') this.select(g.units);
     else if (k === ' ') {
@@ -206,6 +213,30 @@ export class Input {
   }
 
   // ---------- seleção ----------
+
+  // Seleciona o próximo sobrevivente parado e leva a câmera até ele.
+  nextIdle() {
+    const idle = this.game.units.filter((u) => !u.task);
+    if (!idle.length) {
+      this.hud.toast('Ninguém está parado.');
+      return;
+    }
+    this.idleIndex = ((this.idleIndex ?? -1) + 1) % idle.length;
+    const u = idle[this.idleIndex];
+    this.select([u]);
+    this.centerOn(u.x, u.y);
+  }
+
+  // O que está sob o cursor, para a dica flutuante.
+  hoverTarget() {
+    const s = this.state;
+    if (!s.mouse.inside || s.dragBox || s.buildType || this.panning) return null;
+    const p = { x: s.mouse.x, y: s.mouse.y };
+    const hit = this.pick(p);
+    if (hit) return { hit };
+    const res = this.pickResource(p);
+    return res ? { tile: res } : null;
+  }
 
   clearSelection() {
     this.state.selection.clear();

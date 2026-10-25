@@ -70,13 +70,31 @@ assert.ok(g.recruit().ok);
 run(g, 16);
 assert.equal(g.units.length + g.stats.lost, 6 + g.stats.rescued, 'recruta chegou');
 
-// 4. Noite: horda nasce e vai em direção ao acampamento
+// 3b. Evolução: barraca vira cabana (abrigo 3 -> 5) usando quem estiver parado
+g.res.wood += 100;
+g.res.stone += 20;
+const tent = placed.building;
+const capBefore = g.popCap;
+for (const u of g.units) g.setTask(u, null);
+const up = g.startUpgrade(tent);
+assert.ok(up.ok, 'reforma começou: ' + up.reason);
+run(g, 25);
+assert.equal(tent.level, 1, 'barraca evoluiu');
+assert.equal(tent.def.name, 'Cabana de toras');
+assert.equal(g.popCap, capBefore + 2, 'abrigo aumentou');
+console.log('evolução ok:', tent.def.name, 'abrigo', g.popCap);
+
+// 4. Primeira noite calma; na segunda, a horda nasce e vai em direção ao acampamento
+run(g, DAY_LENGTH - g.clock + 2);
+assert.equal(g.hordeRemaining, 0, 'primeira noite sem horda');
+run(g, DAY_LENGTH + NIGHT_LENGTH - g.clock + 1); // amanhece no dia 2
+assert.equal(g.day, 2);
 run(g, DAY_LENGTH - g.clock - 1);
 const before = g.zombies.length;
 run(g, 2);
 const horde = g.zombies.filter((z) => z.mode === 'horde');
 console.log(`noite: ${before} → ${g.zombies.length} zumbis, ${horde.length} em horda`);
-assert.ok(horde.length >= 10, 'horda nasceu');
+assert.ok(horde.length >= 8, 'horda nasceu');
 const avgDist = (zs) => zs.reduce((s, z) => s + Math.hypot(z.x - hq.x, z.y - hq.y), 0) / zs.length;
 const d0 = avgDist(horde);
 run(g, 20);

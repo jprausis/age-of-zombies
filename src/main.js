@@ -53,6 +53,9 @@ const hud = new HUD(state, {
   commandAt: (tx, ty) => input.commandAt(tx, ty),
   startBuild: (type) => input.startBuild(type),
   miniToTile: (u, v) => renderer.miniToTile(u, v),
+  select: (units) => input.select(units),
+  nextIdle: () => input.nextIdle(),
+  hoverInfo: () => input.hoverTarget(),
 });
 input = new Input(canvas, state, renderer, hud);
 // Acesso ao estado pelo console: abra com ?debug na URL.
@@ -67,6 +70,7 @@ function resize() {
   renderer.resize(window.innerWidth, window.innerHeight);
   const top = document.getElementById('topbar').offsetHeight;
   document.documentElement.style.setProperty('--top-h', `${top}px`);
+  document.documentElement.style.setProperty('--bottom-h', `${document.getElementById('bottom').offsetHeight}px`);
   input.clamp();
 }
 window.addEventListener('resize', resize);
@@ -76,9 +80,17 @@ centerOnCamp();
 let last = performance.now();
 let acc = 0;
 let miniT = 0;
+let fpsFrames = 0, fpsT = 0, drawMs = 0;
+const fpsEl = document.getElementById('fps');
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  fpsFrames++;
+  if (now - fpsT > 1000) {
+    if (!fpsEl.hidden) fpsEl.textContent = `${Math.round((fpsFrames * 1000) / (now - fpsT))} fps · desenho ${drawMs.toFixed(1)} ms`;
+    fpsFrames = 0;
+    fpsT = now;
+  }
   const g = state.game;
   const running = state.started && !state.paused && !g.over && !(g.won && !state.continueAfterWin);
   if (running) {
@@ -92,7 +104,9 @@ function frame(now) {
     if (steps === 12) acc = 0;
   }
   input.update(dt);
+  const t0 = performance.now();
   renderer.draw(state, now / 1000);
+  drawMs = drawMs * 0.9 + (performance.now() - t0) * 0.1;
   if (now - miniT > 200) {
     miniT = now;
     renderer.drawMinimap(minimap, state);

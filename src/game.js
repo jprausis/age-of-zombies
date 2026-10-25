@@ -1,7 +1,7 @@
 import {
   MAP_W, MAP_H, T, PASSABLE, UNIT, ZOMBIES, BUILDINGS, RUINS, RECRUIT, START_RES,
   DAY_LENGTH, NIGHT_LENGTH, WIN_DAY, GATHER_TIME, LOOT_TIME, LOOT_CAPACITY, FOOD_PER_SURVIVOR,
-  REPAIR_RATE, REPAIR_HP_PER_WOOD, RES_NAMES,
+  REPAIR_RATE, REPAIR_HP_PER_WOOD, RES_NAMES, FIRST_HORDE_NIGHT, buildingDef,
 } from './config.js';
 import { makeRng } from './rng.js';
 import { GameMap } from './map.js';
@@ -90,7 +90,8 @@ export class Game {
     this.flow = computeFlow(this);
     this.flowDirty = false;
     this.updateVisibility();
-    this.msg('Dia 1. Junte recursos e fortifique o acampamento antes de escurecer.', 'info');
+    this.msg('Dia 1. Junte madeira e pedra, e saqueie as casas por perto atrás de comida.', 'info');
+    this.msg('A primeira noite costuma ser calma. A horda vem a partir da segunda.', 'info');
   }
 
   // ---------- estado derivado ----------
@@ -127,6 +128,15 @@ export class Game {
 
   get popUsed() {
     return this.units.length + (this.hq ? this.hq.queue.length : 0);
+  }
+
+  // Haverá horda ao fim deste dia?
+  get hordeTonight() {
+    return this.day >= FIRST_HORDE_NIGHT;
+  }
+
+  get foodNeed() {
+    return this.units.length * FOOD_PER_SURVIVOR;
   }
 
   get hordeRemaining() {
@@ -182,9 +192,9 @@ export class Game {
   }
 
   createBuilding(type, x, y, complete = false) {
-    const def = BUILDINGS[type];
+    const def = buildingDef(type, 0);
     const b = {
-      id: this.nextId++, kind: 'building', type, def, x, y, w: def.w, h: def.h,
+      id: this.nextId++, kind: 'building', type, def, level: 0, upgrade: null, x, y, w: def.w, h: def.h,
       maxHp: def.hp, hp: complete ? def.hp : Math.max(1, def.hp * 0.1),
       complete, progress: complete ? 1 : 0, cd: 0, angle: -Math.PI / 2, queue: [], foodT: 0, produced: 0,
       hitT: 0, dead: false,
@@ -286,7 +296,11 @@ export class Game {
     if (!this.hordeWarned && this.clock >= DAY_LENGTH - 25) {
       this.hordeWarned = true;
       this.hordeSide = this.rng.int(0, 3);
-      this.msg(`Está escurecendo. Uma horda virá do ${SIDES[this.hordeSide]}!`, 'warn');
+      if (this.hordeTonight) this.msg(`Está escurecendo. Uma horda virá do ${SIDES[this.hordeSide]}!`, 'warn');
+      else this.msg('Está escurecendo. Fiquem perto da fogueira.', 'info');
+      if (this.res.food < this.foodNeed) {
+        this.msg(`Falta comida: o grupo come ${this.foodNeed} ao amanhecer e só há ${Math.floor(this.res.food)}.`, 'warn');
+      }
     }
     if (prev < DAY_LENGTH && this.clock >= DAY_LENGTH) this.startNight();
     if (this.clock >= DAY_LENGTH + NIGHT_LENGTH) {
@@ -296,13 +310,18 @@ export class Game {
   }
 
   startNight() {
-    const n = this.spawnHorde(this.hordeSide);
+    const k = this.day - FIRST_HORDE_NIGHT + 1; // número da horda (1 = primeira)
+    if (k < 1) {
+      this.msg('Anoiteceu. Os mortos estão agitados, mas a horda ainda não veio.', 'info');
+      return;
+    }
+    const n = this.spawnHorde(this.hordeSide, k);
     this.msg(`Anoiteceu. ${n} zumbis vêm do ${SIDES[this.hordeSide]}.`, 'danger');
     // O barulho do acampamento atrai os errantes que estão por perto.
     const hq = this.hq;
     if (!hq) return;
     for (const z of this.zombies) {
-      if (z.mode === 'wander' && Math.hypot(z.x - hq.x, z.y - hq.y) < 35) z.mode = 'horde';
+      if (z.mode === 'wander' && Math.hypot(z.x - hq.x, z.y - hq.y) < 25) z.mode = 'horde';
     }
   }
 
@@ -324,9 +343,8 @@ export class Game {
     }
   }
 
-  spawnHorde(side) {
-    const d = this.day;
-    const count = Math.round(6 + d * 4 + Math.pow(d, 1.6));
+  spawnHorde(side, k) {
+    const count = Math.round(5 + 3 * k + Math.pow(k, 1.5));
     const flow = this.flow;
     let cand = [];
     for (let attempt = 0; attempt < 4 && !cand.length; attempt++) {
@@ -346,8 +364,8 @@ export class Game {
     const c = this.rng.pick(cand);
     cand.sort((a, b) => Math.hypot(a[0] - c[0], a[1] - c[1]) - Math.hypot(b[0] - c[0], b[1] - c[1]));
     cand = cand.slice(0, Math.max(30, count * 2));
-    const runner = d >= 2 ? Math.min(0.3, 0.08 * (d - 1)) : 0;
-    const brute = d >= 3 ? Math.min(0.15, 0.04 * (d - 2)) : 0;
+    const runner = k >= 2 ? Math.min(0.3, 0.08 * (k - 1)) : 0;
+    const brute = k >= 3 ? Math.min(0.15, 0.04 * (k - 2)) : 0;
     for (let i = 0; i < count; i++) {
       const p = this.rng.pick(cand);
       const roll = this.rng();
@@ -498,6 +516,7 @@ export class Game {
   updateUnit(u, dt) {
     u.weaponCd -= dt;
     u.hitT = Math.max(0, u.hitT - dt);
+    u.working = false;
     if (u.weaponCd <= 0) {
       const t = u.task;
       let target = null;
@@ -559,7 +578,7 @@ export class Game {
     const want = t.res === 'wood' ? T.TREE : T.ROCK;
     const i = this.map.idx(t.tx, t.ty);
     if (this.map.tiles[i] !== want) {
-      const n = this.findNearestTile(t.tx, t.ty, want, 8, t.blacklist);
+      const n = this.findNearestTile(t.tx, t.ty, want, 12, t.blacklist);
       if (n) {
         t.tx = n[0];
         t.ty = n[1];
@@ -575,6 +594,7 @@ export class Game {
     const rect = tileRect(t.tx, t.ty);
     if (distToRect(u, rect) <= 0.8) {
       u.path = null;
+      u.working = true;
       u.facing = Math.atan2(t.ty + 0.5 - u.y, t.tx + 0.5 - u.x);
       u.workT += dt;
       if (u.workT >= GATHER_TIME[t.res]) {
@@ -605,7 +625,7 @@ export class Game {
     if (u.phase === 'drop') return this.doDrop(u, t, dt);
     const r = t.ruin;
     if (r.empty) {
-      const n = this.nearestRuin(r.x + r.w / 2, r.y + r.h / 2, 10);
+      const n = this.nearestRuin(r.x + r.w / 2, r.y + r.h / 2, 14);
       if (n) {
         t.ruin = n;
         u.path = null;
@@ -619,6 +639,7 @@ export class Game {
     }
     if (distToRect(u, r) <= 0.8) {
       u.path = null;
+      u.working = true;
       u.facing = Math.atan2(r.y + r.h / 2 - u.y, r.x + r.w / 2 - u.x);
       if (!r.visited) this.visitRuin(r, u);
       u.workT += dt;
@@ -677,7 +698,7 @@ export class Game {
 
   taskBuild(u, t, dt) {
     const b = t.b;
-    if (b.dead || (b.complete && b.hp >= b.maxHp)) {
+    if (b.dead || (b.complete && !b.upgrade && b.hp >= b.maxHp)) {
       const n = this.nearestSite(u.x, u.y, 10);
       if (n) {
         t.b = n;
@@ -689,12 +710,16 @@ export class Game {
     }
     if (distToRect(u, b) <= 0.8) {
       u.path = null;
+      u.working = true;
       u.facing = Math.atan2(b.y + b.h / 2 - u.y, b.x + b.w / 2 - u.x);
       if (!b.complete) {
         const p = dt / b.def.buildTime;
         b.progress = Math.min(1, b.progress + p);
         b.hp = Math.min(b.maxHp, b.hp + b.maxHp * 0.9 * p);
         if (b.progress >= 1) this.completeBuilding(b);
+      } else if (b.upgrade) {
+        b.upgrade.progress += dt / this.nextLevel(b).buildTime;
+        if (b.upgrade.progress >= 1) this.finishUpgrade(b);
       } else {
         const heal = REPAIR_RATE * dt;
         u.repairAcc += heal / REPAIR_HP_PER_WOOD;
@@ -755,7 +780,8 @@ export class Game {
       }
     }
     if (distToRect(u, b) <= 0.8) {
-      const { type, amount } = u.carry;
+      const { type } = u.carry;
+      const amount = Math.round(u.carry.amount * (1 + (b.def.bonus || 0)));
       this.res[type] += amount;
       this.floatText(u.x, u.y - 0.6, `+${amount} ${RES_NAMES[type].toLowerCase()}`, type);
       u.carry.amount = 0;
@@ -824,7 +850,7 @@ export class Game {
   nearestSite(x, y, r) {
     let best = null, bd = r;
     for (const b of this.buildings) {
-      if (b.complete) continue;
+      if (b.complete && !b.upgrade) continue;
       const d = distToRect({ x, y }, b);
       if (d < bd) {
         bd = d;
@@ -887,6 +913,10 @@ export class Game {
       } else {
         if (z.atkCd <= 0) {
           z.atkCd = def.cooldown;
+          if (z.bash.def.thorns) {
+            z.hp -= z.bash.def.thorns;
+            z.hitT = 0.15;
+          }
           this.damageBuilding(z.bash, def.dmg * def.buildingMult);
         }
         return;
@@ -1043,6 +1073,51 @@ export class Game {
     }
   }
 
+  // ---------- evoluções ----------
+
+  nextLevel(b) {
+    const levels = BUILDINGS[b.type].levels;
+    return levels && b.level < levels.length ? levels[b.level] : null;
+  }
+
+  startUpgrade(b, builders = []) {
+    if (!b.complete) return { ok: false, reason: 'Termine a obra primeiro' };
+    if (b.upgrade) return { ok: false, reason: 'Já está em reforma' };
+    const next = this.nextLevel(b);
+    if (!next) return { ok: false, reason: 'Já está no nível máximo' };
+    if (!this.canAfford(next.cost)) return { ok: false, reason: `Faltam recursos para ${next.name.toLowerCase()}` };
+    this.pay(next.cost);
+    b.upgrade = { progress: 0 };
+    let n = 0;
+    for (const u of builders) {
+      this.setTask(u, { kind: 'build', b });
+      n++;
+    }
+    if (!n) n = this.assignIdle(b, 2);
+    this.msg(n ? `Reforma começou: ${next.name}.` : `Reforma paga: ${next.name}. Mande alguém trabalhar nela (botão direito).`, n ? 'info' : 'warn');
+    return { ok: true };
+  }
+
+  finishUpgrade(b) {
+    const oldMax = b.maxHp;
+    b.level++;
+    b.def = buildingDef(b.type, b.level);
+    b.maxHp = b.def.hp;
+    b.hp = Math.min(b.maxHp, b.hp + b.maxHp - oldMax);
+    b.upgrade = null;
+    this.flowDirty = true;
+    this.stats.built++;
+    if (!b.def.wall) this.msg(`Reforma pronta: ${b.def.name}.`, 'good');
+  }
+
+  // Põe até n sobreviventes parados (os mais próximos) para trabalhar numa obra.
+  assignIdle(b, n) {
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    const idle = this.units.filter((u) => !u.task).sort((a, c) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(c.x - cx, c.y - cy)).slice(0, n);
+    for (const u of idle) this.setTask(u, { kind: 'build', b });
+    return idle.length;
+  }
+
   canPlace(type, tx, ty) {
     const def = BUILDINGS[type];
     const m = this.map;
@@ -1071,7 +1146,8 @@ export class Game {
       if (u.task && u.task.kind === 'build' && !u.task.b.complete && !u.task.b.dead) continue;
       this.setTask(u, { kind: 'build', b });
     }
-    return { ok: true, building: b };
+    const helpers = builders.length ? builders.length : this.assignIdle(b, 1);
+    return { ok: true, building: b, helpers };
   }
 
   // Cancela obra (devolve tudo se mal começou, metade depois) ou demole prédio pronto (devolve 25%).
@@ -1155,7 +1231,7 @@ export class Game {
     }
     const o = picked || m.occ[i];
     if (o && o.kind === 'building') {
-      if (!o.complete || o.hp < o.maxHp) {
+      if (!o.complete || o.upgrade || o.hp < o.maxHp) {
         for (const u of units) this.setTask(u, { kind: 'build', b: o });
         return 'build';
       }
@@ -1301,6 +1377,16 @@ export class Game {
     this.msg(reason, 'danger');
   }
 
+  // Atividade resumida, para ícones e painel.
+  activity(u) {
+    const t = u.task;
+    if (!t) return 'idle';
+    if (u.phase === 'drop' || t.kind === 'drop') return 'drop';
+    if (t.kind === 'gather') return t.res;
+    if (t.kind === 'build') return t.b.complete ? 'repair' : 'build';
+    return t.kind; // move, loot, attack
+  }
+
   describeTask(u) {
     const t = u.task;
     if (!t) return 'Parado';
@@ -1309,7 +1395,10 @@ export class Game {
       case 'move': return 'Andando';
       case 'gather': return t.res === 'wood' ? 'Cortando madeira' : 'Quebrando pedra';
       case 'loot': return `Saqueando ${t.ruin.def.name.toLowerCase()}`;
-      case 'build': return t.b.complete ? `Consertando ${t.b.def.name.toLowerCase()}` : `Construindo ${t.b.def.name.toLowerCase()}`;
+      case 'build':
+        if (!t.b.complete) return `Construindo ${t.b.def.name.toLowerCase()}`;
+        if (t.b.upgrade) return `Reformando ${t.b.def.name.toLowerCase()}`;
+        return `Consertando ${t.b.def.name.toLowerCase()}`;
       case 'attack': return 'Atacando';
       default: return '';
     }
