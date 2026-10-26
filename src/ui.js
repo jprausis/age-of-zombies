@@ -1,6 +1,6 @@
 import { BUILDINGS, BUILD_ORDER, RES_NAMES, RES_ORDER, RECRUIT, ROLES, ROLE_ORDER, NEST, DAY_LENGTH, NIGHT_LENGTH, FIRST_HORDE_NIGHT, T } from './config.js';
 import { ACT_COLOR, drawUnit, drawZombie } from './draw/actors.js';
-import { drawRuin, drawNest, drawHQ, drawTent, drawDepot, drawFarm, drawTower, drawWall } from './draw/buildings.js';
+import { drawRuin, drawNest, drawHQ, drawTent, drawDepot, drawFarm, drawTower, drawWall, drawScrapyard } from './draw/buildings.js';
 import { toIso, HW } from './iso.js';
 
 const $ = (id) => document.getElementById(id);
@@ -15,12 +15,13 @@ const ACT_ICON = { idle: null, wood: 'wood', stone: 'stone', loot: 'food', build
 const CYCLE = DAY_LENGTH + NIGHT_LENGTH;
 const WARN_AT = DAY_LENGTH - 25; // mesmo instante do aviso em game.js
 const pct = (v) => `${Math.round(Math.max(0, Math.min(1, v)) * 100)}%`;
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const hpClass = (f) => (f > 0.6 ? 'ok' : f > 0.3 ? 'mid' : 'bad');
 const RES_HINT = {
   wood: 'Madeira: corte árvores (botão direito numa árvore).',
   stone: 'Pedra: quebre rochas cinzentas.',
   food: 'Comida: saqueie casas e mercadinhos (marcador amarelo sobre o telhado) ou construa uma horta. Cada pessoa come 4 ao amanhecer.',
-  scrap: 'Sucata: saqueie oficinas mecânicas (marcador azul) e casas.',
+  scrap: 'Sucata: desmonte carros e caminhões abandonados nas estradas, saqueie oficinas (marcador azul) ou construa um ferro-velho.',
 };
 
 // HUD em DOM por cima do canvas. Atualiza ~8 vezes por segundo.
@@ -200,7 +201,7 @@ export class HUD {
     const s = g.stats;
     $('end-title').textContent = won ? 'Foco eliminado' : 'Fim da linha';
     $('end-reason').textContent = won
-      ? `Os ${g.nests.length} ninhos caíram no dia ${g.day}. Sem eles, as hordas acabaram. Dá para continuar e limpar o resto do mapa.`
+      ? `Os ${g.nests.length} ninhos caíram no dia ${g.day}. Não nascem mais zumbis. Dá para continuar e limpar o resto do mapa.`
       : g.overReason;
     $('end-stats').innerHTML = [
       ['Ninhos destruídos', `${g.stats.nests}/${g.nests.length}`],
@@ -256,10 +257,13 @@ export class HUD {
       banner.className = `banner ${cls}`;
       if (banner.innerHTML !== html) banner.innerHTML = html;
     };
-    if (g.isNight && !g.hordeTonight && g.won) setBanner('calm', 'moon', 'Noite tranquila · sem ninhos, sem hordas');
-    else if (g.isNight && !g.hordeTonight) setBanner('warn', 'moon', 'Noite calma · a horda vem amanhã');
-    else if (g.isNight) setBanner('danger', 'skull', `Noite · ${g.hordeRemaining} zumbis na horda`);
-    else if (g.hordeWarned && g.hordeTonight) setBanner('warn', 'alert', `Horda ${g.hordeOrigin()} em ${Math.ceil(g.secondsToNight)} s`);
+    if (g.isNight && !g.hordeTonight) setBanner('warn', 'moon', 'Primeira noite · os mortos ainda não vieram');
+    else if (g.isNight && !g.hordeRemaining) setBanner('calm', 'moon', 'Noite tranquila · ninguém atacando');
+    else if (g.isNight) setBanner('danger', 'skull', `Noite · ${plural(g.hordeRemaining, 'zumbi', 'zumbis')} atacando`);
+    else if (g.hordeWarned && g.hordeTonight) {
+      const near = g.zombiesNearCamp().length;
+      setBanner(near ? 'danger' : 'warn', near ? 'alert' : 'moon', near ? `Anoitece em ${Math.ceil(g.secondsToNight)} s · ${plural(near, 'zumbi', 'zumbis')} por perto` : `Anoitece em ${Math.ceil(g.secondsToNight)} s · nenhum morto por perto`);
+    }
     else banner.hidden = true;
     $('danger-vignette').classList.toggle('on', g.isNight && g.hordeRemaining > 0);
 
@@ -344,15 +348,17 @@ export class HUD {
       }).join('');
     }
     const cards = list.children;
+    const brood = new Map();
+    for (const z of g.zombies) if (z.from) brood.set(z.from, (brood.get(z.from) || 0) + 1);
     g.nests.forEach((n, i) => {
       const card = cards[i];
       if (!card) return;
       const hit = !n.dead && g.time - n.lastHit < 3;
-      const origin = !n.dead && n === g.hordeNest && g.hordeTonight && (g.hordeWarned || g.isNight);
+      const loose = brood.get(n) || 0;
       card.classList.toggle('dead', n.dead);
       card.classList.toggle('hit', hit);
-      card.classList.toggle('origin', origin && !hit);
-      const state = n.dead ? 'Destruído' : hit ? 'Sob ataque!' : origin ? 'Origem da horda' : `${Math.ceil(n.hp)} de vida`;
+      card.classList.toggle('origin', !n.dead && !hit && loose >= 15);
+      const state = n.dead ? 'Destruído' : hit ? 'Sob ataque!' : `${Math.ceil(n.hp)} de vida · ${plural(loose, 'solto', 'soltos')}`;
       const st = card.querySelector('.nest-state');
       if (st.textContent !== state) st.textContent = state;
       card.querySelector('.nest-hp span').style.width = pct(n.dead ? 0 : n.hp / n.maxHp);
@@ -369,12 +375,13 @@ export class HUD {
     this.track = now;
     if (!t || t.g !== g) return;
     if (now.nests > t.nests && g.nestsAlive) {
-      this.alert('good', 'Ninho destruído', `Restam ${g.nestsAlive}. As hordas vão ficar menores.`, 'Objetivo');
+      this.alert('good', 'Ninho destruído', `Restam ${g.nestsAlive}. Um ninho a menos soltando zumbis.`, 'Objetivo');
     } else if (now.warned && !t.warned && g.hordeTonight) {
-      this.alert('danger', 'A horda se aproxima', `Vem ${g.hordeOrigin()} · anoitece em ${Math.ceil(g.secondsToNight)} s`, `Dia ${g.day}`);
+      const near = g.zombiesNearCamp().length;
+      if (near) this.alert('danger', 'A noite se aproxima', `${near} zumbis rondam o acampamento · anoitece em ${Math.ceil(g.secondsToNight)} s`, `Dia ${g.day}`);
     } else if (now.night && !t.night) {
-      if (g.hordeTonight) this.alert('danger', 'Anoiteceu', `${g.hordeRemaining} zumbis vêm ${g.hordeOrigin()}`, `Noite ${g.day}`);
-      else if (g.day < FIRST_HORDE_NIGHT) this.alert('info', 'Primeira noite', 'Os mortos estão agitados, mas a horda ainda não veio.', `Noite ${g.day}`);
+      if (g.hordeTonight && g.hordeRemaining) this.alert('danger', 'Anoiteceu', `${g.hordeRemaining} zumbis vêm atrás da fogueira`, `Noite ${g.day}`);
+      else if (g.day < FIRST_HORDE_NIGHT) this.alert('info', 'Primeira noite', 'Os mortos estão agitados, mas ainda não vieram.', `Noite ${g.day}`);
     } else if (now.day > t.day) {
       const m = [...g.messages].reverse().find((x) => x.text.startsWith('Amanheceu'));
       this.alert(m && m.kind === 'danger' ? 'danger' : 'info', `Dia ${g.day}`, m ? m.text.replace(/^Amanheceu\. Dia \d+\. /, '') : '', 'Amanheceu');
@@ -392,19 +399,26 @@ export class HUD {
     this.alertTimer = setTimeout(() => (el.hidden = true), 4300);
   }
 
-  // Seta na borda da tela apontando para a horda (ou para o ninho de onde ela vai sair).
+  // Seta na borda da tela apontando para o maior grupo de zumbis vindo (à noite) ou rondando (no anoitecer).
   updateHordeArrow(g) {
     const el = $('horde-arrow');
+    let group = null;
+    if (g.hq && g.hordeTonight && (g.isNight || g.hordeWarned)) {
+      const zs = g.isNight ? g.zombies.filter((z) => z.mode === 'horde') : g.zombiesNearCamp();
+      // Agrupa por direção (8 fatias em volta do acampamento) e fica com a fatia mais cheia.
+      const cx = g.hq.x + g.hq.w / 2, cy = g.hq.y + g.hq.h / 2;
+      const bins = Array.from({ length: 8 }, () => ({ x: 0, y: 0, n: 0 }));
+      for (const z of zs) {
+        const k = ((Math.round(Math.atan2(z.y - cy, z.x - cx) / (Math.PI / 4)) % 8) + 8) % 8;
+        bins[k].x += z.x; bins[k].y += z.y; bins[k].n++;
+      }
+      group = bins.reduce((a, b) => (b.n > a.n ? b : a));
+      if (!group.n) group = null;
+    }
     let target = null, label = '';
-    if (g.isNight && g.hordeRemaining > 0) {
-      let x = 0, y = 0, n = 0;
-      for (const z of g.zombies) if (z.mode === 'horde') { x += z.x; y += z.y; n++; }
-      target = { x: x / n, y: y / n };
-      label = `Horda · ${g.compassFrom(target.x, target.y)}`;
-    } else if (!g.isNight && g.hordeWarned && g.hordeTonight && g.hordeNest && !g.hordeNest.dead) {
-      const n = g.hordeNest;
-      target = { x: n.x + n.w / 2, y: n.y + n.h / 2 };
-      label = `Ninho da horda · ${g.compassFrom(target.x, target.y)}`;
+    if (group) {
+      target = { x: group.x / group.n, y: group.y / group.n };
+      label = `${plural(group.n, 'zumbi', 'zumbis')} · ${g.compassFrom(target.x, target.y)}`;
     }
     if (!target) {
       el.hidden = true;
@@ -458,7 +472,7 @@ export class HUD {
     else if (subject.kind === 'ruin') drawRuin(ctx, subject, env);
     else if (subject.kind === 'nest') drawNest(ctx, subject, env);
     else {
-      const draw = { hq: drawHQ, tent: drawTent, depot: drawDepot, farm: drawFarm, tower: drawTower }[subject.type] || drawWall;
+      const draw = { hq: drawHQ, tent: drawTent, depot: drawDepot, farm: drawFarm, tower: drawTower, scrapyard: drawScrapyard }[subject.type] || drawWall;
       draw(ctx, subject, env);
     }
   }
@@ -541,11 +555,11 @@ export class HUD {
     } else {
       const e = h.hit;
       if (e.kind === 'nest') {
-        html = `<strong>Ninho ${g.compassFrom(e.x + 1.5, e.y + 1.5)}</strong><span>Vida ${Math.ceil(e.hp)}/${e.maxHp}</span><em>Botão direito para atacar. As hordas saem daqui.</em>`;
+        html = `<strong>Ninho ${g.compassFrom(e.x + 1.5, e.y + 1.5)}</strong><span>Vida ${Math.ceil(e.hp)}/${e.maxHp}</span><em>Botão direito para atacar. Solta um zumbi a cada ${Math.round(g.nestSpawnEvery)} s.</em>`;
       } else if (e.kind === 'ruin') {
         const loot = RES_ORDER.filter((k) => e.loot[k] > 0);
         const what = e.empty ? 'Já foi saqueada.' : e.visited ? loot.map((k) => `${e.loot[k]} ${RES_NAMES[k].toLowerCase()}`).join(' · ') : `Pode ter ${loot.map((k) => RES_NAMES[k].toLowerCase()).join(', ')}.`;
-        html = `<strong>${esc(e.def.name)}</strong><span>${what}</span>${e.empty ? '' : '<em>Botão direito para saquear</em>'}`;
+        html = `<strong>${esc(e.def.name)}</strong><span>${what}</span>${e.empty ? '' : `<em>Botão direito para ${e.def.verb || 'saquear'}</em>`}`;
       } else if (e.kind === 'unit') {
         html = `<strong>${esc(e.name)}</strong><span>${e.rd.name} · ${esc(g.describeTask(e))}${e.carry.amount ? ` · leva ${e.carry.amount} ${RES_NAMES[e.carry.type].toLowerCase()}` : ''}</span>`;
       } else if (e.kind === 'zombie') {
@@ -603,7 +617,7 @@ export class HUD {
         <dl class="facts">
           <div><dt>Vida</dt><dd>${Math.ceil(e.hp)}/${e.maxHp}</dd></div>
           <div><dt>Mordida</dt><dd>${e.def.dmg}</dd></div>
-          <div><dt>Estado</dt><dd>${e.mode === 'horde' ? 'Na horda' : 'Vagando'}</dd></div>
+          <div><dt>Estado</dt><dd>${e.mode === 'horde' ? 'Atacando o acampamento' : e.home ? 'Guardando o ninho' : 'Vagando'}</dd></div>
         </dl>`;
     }
     if (e.kind === 'nest') {
@@ -611,8 +625,8 @@ export class HUD {
       return `<span class="level">Objetivo</span><h2>Ninho ${g.compassFrom(e.x + 1.5, e.y + 1.5)}</h2>
         <div class="hpbar nestbar"><span style="width:${pct(e.hp / e.maxHp)}"></span></div>
         <dl class="facts"><div><dt>Vida</dt><dd>${Math.ceil(e.hp)}/${e.maxHp}</dd></div></dl>
-        <p class="status">${hot ? 'Sob ataque: soltando defensores.' : `Regenera ${NEST.regen}/s quando ninguém atira. Cresce a cada dia.`}</p>
-        <p class="hint">As hordas saem daqui. Leve soldados e use o botão direito.</p>`;
+        <p class="status">${hot ? 'Sob ataque: soltando defensores e cuspindo ácido.' : `Solta um zumbi a cada ${Math.round(g.nestSpawnEvery)} s (mais rápido a cada dia). Regenera ${NEST.regen}/s quando ninguém atira.`}</p>
+        <p class="hint">Cada dia de atraso é mais zumbi no mapa. Leve soldados e use o botão direito.</p>`;
     }
     if (e.kind === 'ruin') {
       const loot = RES_ORDER.filter((k) => e.loot[k] > 0);
@@ -623,7 +637,7 @@ export class HUD {
           : `Pode ter ${loot.map((k) => RES_NAMES[k].toLowerCase()).join(', ')}.`;
       return `<h2>${esc(e.def.name)}</h2>
         <p class="status">${lootLine}</p>
-        <p class="hint">${e.empty ? '' : 'Selecione sobreviventes e clique com o botão direito para saquear.'}</p>`;
+        <p class="hint">${e.empty ? '' : `Selecione catadores e clique com o botão direito para ${e.def.verb || 'saquear'}.`}</p>`;
     }
     const b = e;
     let extra = '';
@@ -633,6 +647,7 @@ export class HUD {
     else if (b.def.range) extra = `<p class="status">${b.def.dmg} de dano · alcance ${b.def.range}</p>`;
     else if (b.upgrade) extra = `<p class="status">Em reforma · ${pct(b.upgrade.progress)}</p>`;
     else if (b.def.foodInterval) extra = `<p class="status">1 de comida a cada ${String(b.def.foodInterval).replace('.', ',')} s · já produziu ${b.produced}.</p>`;
+    else if (b.def.produce) extra = `<p class="status">1 de ${RES_NAMES[b.def.produce.res].toLowerCase()} a cada ${String(b.def.produce.every).replace('.', ',')} s · já produziu ${b.produced}.</p>`;
     else if (b.def.bonus) extra = `<p class="status">Entregas aqui rendem ${Math.round(b.def.bonus * 100)}% a mais.</p>`;
     else if (b.def.thorns) extra = `<p class="status">Espetos: ${b.def.thorns} de dano em quem bate.</p>`;
     else if (b.def.pop) extra = `<p class="status">Abriga ${b.def.pop} pessoas.</p>`;

@@ -130,7 +130,7 @@
   #day { font: 400 17px/1 var(--display); }
   #clock { font-weight: 600; font-size: 13px; color: var(--muted); letter-spacing: 0.05em; }
   #clock-wrap.night #day { color: #a9b6dc; }
-  /* Barra do ciclo inteiro: dia (claro) e noite (azulada, a partir de --night), com a marca do aviso da horda. */
+  /* Barra do ciclo inteiro: dia (claro) e noite (azulada, a partir de --night), com a marca do aviso do anoitecer. */
   .clock-bar {
     position: relative; width: 132px; height: 8px; border: 1px solid var(--line-hi); border-radius: 2px; overflow: hidden;
     background: linear-gradient(90deg, #2c2a1a 0 var(--night, 62.5%), #1c2133 var(--night, 62.5%) 100%);
@@ -210,7 +210,7 @@
     100% { opacity: 0; transform: translate(-50%, -54%); }
   }
 
-  /* Vinheta vermelha nas noites de horda; seta na borda apontando para o ninho de origem. */
+  /* Vinheta vermelha quando há zumbis atacando à noite; seta na borda apontando para o maior grupo. */
   #danger-vignette {
     position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity 2s;
     background: radial-gradient(ellipse at center, rgba(120, 10, 0, 0) 55%, rgba(120, 14, 6, 0.38) 100%);
@@ -476,6 +476,7 @@
   <symbol id="i-gate" viewBox="0 0 24 24"><path d="M3.5 20.5V6M20.5 20.5V6M2.5 6h19"/><path d="M7.5 20.5v-11M12 20.5v-11M16.5 20.5v-11M5.5 13h13"/></symbol>
   <symbol id="i-tower" viewBox="0 0 24 24"><path d="M8 21l1.2-10.5h5.6L16 21z"/><path d="M5.5 10.5h13L17 5H7z"/><path d="M10.2 21v-4h3.6v4M12 5V2.5"/></symbol>
   <symbol id="i-farm" viewBox="0 0 24 24"><path d="M12 20v-8"/><path d="M12 12c0-4-3-6.5-7-6.5 0 4 3 6.5 7 6.5zM12 11c0-4.2 3-7 7-7 0 4.2-3 7-7 7z"/><path d="M4 20h16"/></symbol>
+  <symbol id="i-scrapyard" viewBox="0 0 24 24"><path d="M2.5 20h19"/><path d="M4 20l3-6 3 2 2-4 3 3 2-2 3 7"/><circle cx="16.5" cy="7" r="3"/><path d="M16.5 4V2.5M19.5 7H21M13.5 7H12M16.5 10v1.5"/></symbol>
   <symbol id="i-upgrade" viewBox="0 0 24 24"><path d="M12 18V5.5M6 11.5l6-6 6 6"/><path d="M5 21h14"/></symbol>
   <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13.5h10L18 7"/><path d="M10 11v6M14 11v6"/></symbol>
@@ -499,7 +500,7 @@
         <span id="day">Dia 1</span>
         <span id="clock">06:00</span>
       </div>
-      <div class="clock-bar" title="Dia e noite. A marca vermelha é a hora do aviso da horda.">
+      <div class="clock-bar" title="Dia e noite. A marca vermelha é o aviso do anoitecer: daí a pouco, os mortos por perto atacam.">
         <div id="clock-fill"></div>
         <div id="clock-warn"></div>
       </div>
@@ -555,16 +556,16 @@
     <div class="sheet plate">
       <p class="kicker">Diário de campo · dia 1</p>
       <h1>Age of <em>Zombies</em></h1>
-      <p class="lede">Quatro catadores, um soldado, uma fogueira e uma clareira no meio do mato. De dia vocês juntam lenha, pedra e o que der para saquear nas cidades abandonadas. À noite os mortos vêm em horda.</p>
+      <p class="lede">Quatro catadores, um soldado, uma fogueira e uma clareira no meio do mato. De dia vocês juntam lenha, pedra e o que der para saquear nas cidades abandonadas. À noite, os mortos que estiverem por perto vêm atrás da fogueira.</p>
       <div class="cards">
         <div class="card"><div class="card-head"><svg class="ic"><use href="#i-catador"/></svg>Catadores</div><p>Coletam, saqueiam e constroem. Atiram pouco. Recrute com <kbd>R</kbd>.</p></div>
         <div class="card soldier"><div class="card-head"><svg class="ic"><use href="#i-soldado"/></svg>Soldados</div><p>Só lutam, mas aguentam e acertam mais. Custam sucata. Recrute com <kbd>S</kbd>.</p></div>
-        <div class="card nestcard"><div class="card-head"><svg class="ic"><use href="#i-nest"/></svg>Ninhos</div><p>As hordas saem de três ninhos que crescem a cada dia. Destrua os três para vencer.</p></div>
+        <div class="card nestcard"><div class="card-head"><svg class="ic"><use href="#i-nest"/></svg>Ninhos</div><p>Três ninhos soltam zumbis sem parar, cada dia mais rápido. Destrua os três para vencer.</p></div>
       </div>
       <dl class="controls-list">
         <div><dt>Clique / arraste</dt><dd>seleciona sobreviventes</dd></div>
-        <div><dt>Botão direito</dt><dd>mover, coletar, saquear, atacar</dd></div>
-        <div><dt>B D C M G T H</dt><dd>construções (ou pelo painel)</dd></div>
+        <div><dt>Botão direito</dt><dd>mover, coletar, saquear, desmontar, atacar</dd></div>
+        <div><dt>B D C M G T H V</dt><dd>construções (ou pelo painel)</dd></div>
         <div><dt>Arrastar cerca</dt><dd>constrói uma linha inteira</dd></div>
         <div><dt>Setas / bordas</dt><dd>movem a câmera; roda dá zoom</dd></div>
         <div><dt>R · S</dt><dd>recruta catador · soldado</dd></div>
@@ -588,16 +589,16 @@
       <h2>Manual do acampamento</h2>
       <dl class="controls-list">
         <div><dt>Objetivo</dt><dd>destruir os 3 ninhos (painel no topo)</dd></div>
-        <div><dt>Ninhos</dt><dd>crescem, regeneram, cospem ácido e soltam defensores</dd></div>
+        <div><dt>Ninhos</dt><dd>soltam zumbis sem parar; atacados, cospem ácido e soltam defensores</dd></div>
         <div><dt>Catadores</dt><dd>coletam, saqueiam e constroem</dd></div>
         <div><dt>Soldados</dt><dd>só lutam; custam sucata</dd></div>
         <div><dt>Madeira</dt><dd>árvores; base de quase tudo</dd></div>
         <div><dt>Pedra</dt><dd>rochas; muros e torres</dd></div>
         <div><dt>Comida</dt><dd>casas e mercadinhos (marcador amarelo) e hortas</dd></div>
-        <div><dt>Sucata</dt><dd>oficinas; soldados, portões e torres</dd></div>
+        <div><dt>Sucata</dt><dd>oficinas, carros e caminhões nas estradas, e o ferro-velho</dd></div>
         <div><dt>Amanhecer</dt><dd>cada pessoa come 4</dd></div>
-        <div><dt>Hordas</dt><dd>saem de um ninho; a seta na borda mostra de onde</dd></div>
-        <div><dt>Muros</dt><dd>a horda bate no ponto mais fraco</dd></div>
+        <div><dt>Noites</dt><dd>os mortos perto do acampamento atacam; a seta mostra de onde</dd></div>
+        <div><dt>Muros</dt><dd>os zumbis batem no ponto mais fraco</dd></div>
         <div><dt>Cura</dt><dd>perto do acampamento, sem apanhar</dd></div>
         <div><dt>Mordidos</dt><dd>podem se levantar como zumbis</dd></div>
         <div><dt>Casas</dt><dd>às vezes têm alguém escondido</dd></div>

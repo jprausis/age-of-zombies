@@ -1,5 +1,5 @@
 import {
-  MAP_W, MAP_H, T, PASSABLE, UNIT, ROLES, ZOMBIES, BUILDINGS, RUINS, RECRUIT, START_RES, NEST,
+  MAP_W, MAP_H, T, PASSABLE, UNIT, ROLES, ZOMBIES, BUILDINGS, RUINS, RECRUIT, START_RES, NEST, NIGHT_PULL, ZOMBIE_CAP,
   DAY_LENGTH, NIGHT_LENGTH, WIN_DAY, GATHER_TIME, LOOT_TIME, LOOT_CAPACITY, FOOD_PER_SURVIVOR,
   REPAIR_RATE, REPAIR_HP_PER_WOOD, RES_NAMES, FIRST_HORDE_NIGHT, buildingDef,
 } from './config.js';
@@ -10,7 +10,6 @@ import { findPath, smoothPath } from './pathfinding.js';
 import { computeFlow } from './flowfield.js';
 
 const CELL = 4; // tamanho da célula da grade espacial de zumbis, em tiles
-const SIDES = ['norte', 'leste', 'sul', 'oeste'];
 const COMPASS = ['leste', 'sudeste', 'sul', 'sudoeste', 'oeste', 'noroeste', 'norte', 'nordeste'];
 const LOOT_ORDER = ['food', 'scrap', 'wood', 'stone'];
 const NAMES = [
@@ -21,6 +20,10 @@ const NAMES = [
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const center = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+// "na casa", "no carro": artigo e contrações conforme o gênero do nome.
+const na = (def) => `${def.g === 'm' ? 'no' : 'na'} ${def.name.toLowerCase()}`;
+const ate = (def) => `até ${def.g === 'm' ? 'o' : 'a'} ${def.name.toLowerCase()}`;
+const nesta = (def) => `${def.g === 'm' ? 'neste' : 'nesta'} ${def.name.toLowerCase()}`;
 
 // Distância de uma entidade (ponto) até um retângulo de tiles {x, y, w, h}.
 export function distToRect(e, r) {
@@ -61,14 +64,12 @@ export class Game {
     this.flowCd = 0;
     this.flowAge = 0;
     this.visT = 0;
-    this.spawnT = 10;
     this.over = false;
     this.overReason = '';
     this.won = false;
     this.stats = { kills: 0, lost: 0, looted: 0, recruited: 0, rescued: 0, built: 0, nests: 0 };
-    this.hordeWarned = false;
-    this.hordeSide = 0;
-    this.hordeNest = null;
+    this.hordeWarned = false; // aviso do anoitecer já dado hoje
+    this.spawnedToday = 0;
     this.alertCd = 0;
     this.breachCd = 0;
     this.usedNames = new Set();
@@ -97,7 +98,7 @@ export class Game {
     this.flowDirty = false;
     this.updateVisibility();
     this.msg('Dia 1. Catadores juntam madeira e pedra e saqueiam as casas por perto.', 'info');
-    this.msg(`As hordas saem de ${this.nests.length} ninhos (marcados no minimapa). Destrua todos para vencer.`, 'warn');
+    this.msg(`${this.nests.length} ninhos (no minimapa) soltam zumbis sem parar. Quanto antes caírem, menos mortos no mapa.`, 'warn');
   }
 
   // ---------- estado derivado ----------
@@ -136,9 +137,22 @@ export class Game {
     return this.units.length + (this.hq ? this.hq.queue.length : 0);
   }
 
-  // Haverá horda ao fim deste dia? Sem ninhos, não há de onde ela sair.
+  // Os mortos por perto atacam o acampamento esta noite? (A primeira noite é calma.)
   get hordeTonight() {
-    return this.day >= FIRST_HORDE_NIGHT && (!this.nests.length || this.nestsAlive > 0);
+    return this.day >= FIRST_HORDE_NIGHT;
+  }
+
+  // Errantes perto o bastante do acampamento para virem atrás da fogueira à noite.
+  zombiesNearCamp() {
+    const hq = this.hq;
+    if (!hq) return [];
+    const c = center(hq);
+    return this.zombies.filter((z) => z.mode === 'wander' && !z.home && Math.hypot(z.x - c.x, z.y - c.y) < NIGHT_PULL);
+  }
+
+  // Intervalo atual entre zumbis soltos por cada ninho.
+  get nestSpawnEvery() {
+    return Math.max(NEST.spawnMin, NEST.spawnEvery - NEST.spawnFaster * (this.day - 1));
   }
 
   get nestsAlive() {
@@ -317,11 +331,6 @@ export class Game {
       this.visT = 0.25;
       this.updateVisibility();
     }
-    this.spawnT -= dt;
-    if (this.spawnT <= 0) {
-      this.spawnT = 12;
-      this.respawnWanderers();
-    }
     this.checkDefeat();
   }
 
@@ -330,15 +339,15 @@ export class Game {
     this.clock += dt;
     if (!this.hordeWarned && this.clock >= DAY_LENGTH - 25) {
       this.hordeWarned = true;
-      this.hordeSide = this.rng.int(0, 3);
-      const alive = this.nests.filter((n) => !n.dead);
-      this.hordeNest = alive.length ? this.rng.pick(alive) : null;
-      if (this.hordeTonight) {
-        this.msg(`Está escurecendo. Uma horda virá ${this.hordeOrigin()}!`, 'warn');
+      const near = this.zombiesNearCamp().length;
+      if (this.hordeTonight && near) {
+        this.msg(`Está escurecendo. ${near} ${near === 1 ? 'zumbi ronda' : 'zumbis rondam'} o acampamento e ${near === 1 ? 'vai' : 'vão'} atacar à noite.`, 'warn');
         this.sound('horde_warning');
-        if (this.hordeNest) this.pings.push({ ...center(this.hordeNest), t: 0, kind: 'danger' });
+      } else if (this.hordeTonight) {
+        this.msg('Está escurecendo. Nenhum morto por perto, por enquanto.', 'info');
+      } else {
+        this.msg('Está escurecendo. Fiquem perto da fogueira.', 'info');
       }
-      else this.msg('Está escurecendo. Fiquem perto da fogueira.', 'info');
       if (this.res.food < this.foodNeed) {
         this.msg(`Falta comida: o grupo come ${this.foodNeed} ao amanhecer e só há ${Math.floor(this.res.food)}.`, 'warn');
       }
@@ -350,25 +359,19 @@ export class Game {
     }
   }
 
+  // À noite a fogueira atrai os errantes que estão por perto: eles viram horda e seguem o campo de fluxo.
   startNight() {
-    const k = this.day - FIRST_HORDE_NIGHT + 1; // número da horda (1 = primeira)
-    if (k >= 1 && !this.hordeTonight) {
-      this.msg('Anoiteceu. Sem os ninhos, nenhuma horda se forma.', 'info');
+    if (!this.hordeTonight) {
+      this.msg('Anoiteceu. Os mortos estão agitados, mas ainda não vieram.', 'info');
       return;
     }
-    if (k < 1) {
-      this.msg('Anoiteceu. Os mortos estão agitados, mas a horda ainda não veio.', 'info');
-      return;
-    }
-    const nest = this.hordeNest && !this.hordeNest.dead ? this.hordeNest : null;
-    const n = nest ? this.spawnHordeAtNest(nest, k) : this.spawnHorde(this.hordeSide, k);
-    this.msg(`Anoiteceu. ${n} zumbis vêm ${this.hordeOrigin()}.`, 'danger');
-    this.sound('horde_start');
-    // O barulho do acampamento atrai os errantes que estão por perto.
-    const hq = this.hq;
-    if (!hq) return;
-    for (const z of this.zombies) {
-      if (z.mode === 'wander' && Math.hypot(z.x - hq.x, z.y - hq.y) < 25) z.mode = 'horde';
+    const near = this.zombiesNearCamp();
+    for (const z of near) z.mode = 'horde';
+    if (near.length) {
+      this.msg(`Anoiteceu. ${near.length} ${near.length === 1 ? 'zumbi vem' : 'zumbis vêm'} atrás da fogueira.`, 'danger');
+      this.sound('horde_start');
+    } else {
+      this.msg('Anoiteceu. Nenhum morto por perto do acampamento.', 'info');
     }
   }
 
@@ -384,27 +387,13 @@ export class Game {
       for (const u of this.units) this.damageUnit(u, 15);
       this.msg(`Amanheceu. Dia ${this.day}. Faltou comida e todos estão fracos.`, 'danger');
     }
-    // Os ninhos engordam a cada dia que passam de pé.
-    for (const n of this.nests) {
-      if (n.dead) continue;
-      const grow = Math.round(n.maxHp * 0.06);
-      n.maxHp += grow;
-      n.hp += grow;
+    if (this.spawnedToday) {
+      this.msg(`Os ninhos soltaram ${this.spawnedToday} zumbis desde ontem. Agora soltam um a cada ${Math.round(this.nestSpawnEvery)} s.`, 'warn');
+      this.spawnedToday = 0;
     }
     if (this.day === WIN_DAY + 1 && this.nestsAlive) {
-      this.msg(`${WIN_DAY} noites de pé. Os ninhos continuam crescendo: ${this.nestsAlive} ainda ativos.`, 'warn');
+      this.msg(`${WIN_DAY} noites de pé. ${this.nestsAlive} ninhos continuam soltando zumbis.`, 'warn');
     }
-  }
-
-  hordeOrigin() {
-    const n = this.hordeNest && !this.hordeNest.dead ? this.hordeNest : null;
-    if (!n) return `do ${SIDES[this.hordeSide]}`;
-    const c = center(n);
-    return `do ninho a ${this.compassFrom(c.x, c.y)}`;
-  }
-
-  hordeCount(k) {
-    return Math.round(5 + 3 * k + Math.pow(k, 1.5));
   }
 
   rollZombieKind(k) {
@@ -412,70 +401,6 @@ export class Game {
     const brute = k >= 3 ? Math.min(0.15, 0.04 * (k - 2)) : 0;
     const roll = this.rng();
     return roll < brute ? 'brute' : roll < brute + runner ? 'runner' : 'walker';
-  }
-
-  // A horda sai de um ninho. Com menos ninhos vivos, ela fica menor.
-  spawnHordeAtNest(nest, k) {
-    const total = this.nests.length || 1;
-    const count = Math.max(4, Math.round(this.hordeCount(k) * (0.55 + 0.45 * this.nestsAlive / total)));
-    const cand = [];
-    for (let y = nest.y - 4; y < nest.y + nest.h + 4; y++) {
-      for (let x = nest.x - 4; x < nest.x + nest.w + 4; x++) {
-        if (!this.blockZombie(x, y) && Number.isFinite(this.flow.dist[y * MAP_W + x])) cand.push([x, y]);
-      }
-    }
-    if (!cand.length) return this.spawnHorde(this.hordeSide, k);
-    for (let i = 0; i < count; i++) {
-      const p = this.rng.pick(cand);
-      this.spawnZombie(this.rollZombieKind(k), p[0] + this.rng.range(0.2, 0.8), p[1] + this.rng.range(0.2, 0.8), 'horde');
-    }
-    return count;
-  }
-
-  spawnHorde(side, k) {
-    const count = this.hordeCount(k);
-    const flow = this.flow;
-    let cand = [];
-    for (let attempt = 0; attempt < 4 && !cand.length; attempt++) {
-      const s = (side + attempt) % 4;
-      for (let k = 2; k < MAP_W - 2; k++) {
-        for (let depth = 1; depth <= 3; depth++) {
-          let x, y;
-          if (s === 0) [x, y] = [k, depth];
-          else if (s === 1) [x, y] = [MAP_W - 1 - depth, k];
-          else if (s === 2) [x, y] = [k, MAP_H - 1 - depth];
-          else [x, y] = [depth, k];
-          if (!this.blockZombie(x, y) && Number.isFinite(flow.dist[y * MAP_W + x])) cand.push([x, y]);
-        }
-      }
-    }
-    if (!cand.length) return 0;
-    const c = this.rng.pick(cand);
-    cand.sort((a, b) => Math.hypot(a[0] - c[0], a[1] - c[1]) - Math.hypot(b[0] - c[0], b[1] - c[1]));
-    cand = cand.slice(0, Math.max(30, count * 2));
-    for (let i = 0; i < count; i++) {
-      const p = this.rng.pick(cand);
-      this.spawnZombie(this.rollZombieKind(k), p[0] + this.rng.range(0.3, 0.7), p[1] + this.rng.range(0.3, 0.7), 'horde');
-    }
-    return count;
-  }
-
-  respawnWanderers() {
-    let wandering = 0;
-    for (const z of this.zombies) if (z.mode === 'wander') wandering++;
-    const cap = Math.min(120, 25 + this.day * 4);
-    if (wandering >= cap) return;
-    const hq = this.hq;
-    const n = this.rng.int(1, 3);
-    for (let i = 0; i < n; i++) {
-      for (let k = 0; k < 20; k++) {
-        const x = this.rng.int(1, MAP_W - 2), y = this.rng.int(1, MAP_H - 2);
-        if (this.blockZombie(x, y) || this.map.visible[this.map.idx(x, y)]) continue;
-        if (hq && Math.hypot(x - hq.x, y - hq.y) < 28) continue;
-        this.spawnZombie('walker', x + 0.5, y + 0.5, 'wander');
-        break;
-      }
-    }
   }
 
   rebuildGrid() {
@@ -765,7 +690,7 @@ export class Game {
     }
     if (!this.approach(u, r, dt)) {
       u.task = null;
-      this.msg(`${u.name} não encontra caminho até a ${r.def.name.toLowerCase()}.`, 'warn');
+      this.msg(`${u.name} não encontra caminho ${ate(r.def)}.`, 'warn');
     }
   }
 
@@ -779,7 +704,7 @@ export class Game {
       z.target = u;
       z.chaseT = 8;
     }
-    this.msg(`Havia zumbis escondidos na ${r.def.name.toLowerCase()}!`, 'danger');
+    this.msg(`Havia zumbis escondidos ${na(r.def)}!`, 'danger');
     this.pings.push({ x: r.x + r.w / 2, y: r.y + r.h / 2, t: 0, kind: 'danger' });
     r.lurkers = 0;
   }
@@ -796,7 +721,7 @@ export class Game {
     if (!u) return;
     r.survivor = false;
     this.stats.rescued++;
-    this.msg(`${u.name} estava escondido na ${r.def.name.toLowerCase()} e entrou para o grupo!`, 'good');
+    this.msg(`${u.name} estava escondido ${na(r.def)} e entrou para o grupo!`, 'good');
   }
 
   taskBuild(u, t, dt) {
@@ -1073,11 +998,18 @@ export class Game {
       z.wanderT -= dt;
       if (z.wanderT <= 0 || Math.hypot(z.wx - z.x, z.wy - z.y) < 0.3) {
         z.wanderT = 3 + this.rng() * 5;
-        // Guardas e defensores rondam o próprio ninho.
-        const home = z.home && !z.home.dead ? center(z.home) : z;
-        const span = z.home && !z.home.dead ? 4.5 : 5;
-        z.wx = home.x + this.rng.range(-span, span);
-        z.wy = home.y + this.rng.range(-span, span);
+        // Guardas e defensores rondam o próprio ninho. Os soltos pelo ninho andam pelo mapa todo:
+        // às vezes escolhem um destino qualquer e atravessam até lá (o acampamento fica no meio do caminho).
+        if (z.roam && !z.home && this.rng() < 0.45) {
+          z.wx = this.rng.range(4, MAP_W - 4);
+          z.wy = this.rng.range(4, MAP_H - 4);
+          z.wanderT = 60;
+        } else {
+          const home = z.home && !z.home.dead ? center(z.home) : z;
+          const span = z.home && !z.home.dead ? 4.5 : 6;
+          z.wx = home.x + this.rng.range(-span, span);
+          z.wy = home.y + this.rng.range(-span, span);
+        }
       }
       gx = z.wx;
       gy = z.wy;
@@ -1183,13 +1115,14 @@ export class Game {
           }
         }
       }
-      if (b.def.foodInterval) {
+      const prod = b.def.foodInterval ? { res: 'food', every: b.def.foodInterval } : b.def.produce;
+      if (prod) {
         b.foodT += dt;
-        if (b.foodT >= b.def.foodInterval) {
-          b.foodT -= b.def.foodInterval;
-          this.res.food += 1;
+        if (b.foodT >= prod.every) {
+          b.foodT -= prod.every;
+          this.res[prod.res] += 1;
           b.produced++;
-          if (b.produced % 5 === 0) this.floatText(b.x + b.w / 2, b.y + 0.4, '+5 comida', 'food');
+          if (b.produced % 5 === 0) this.floatText(b.x + b.w / 2, b.y + 0.4, `+5 ${RES_NAMES[prod.res].toLowerCase()}`, prod.res);
         }
       }
       if (b.queue.length) {
@@ -1225,6 +1158,17 @@ export class Game {
       }
       const c = center(n);
       const freeSpot = () => this.freeTileNear(Math.floor(c.x), Math.floor(c.y), (x, y) => !this.blockZombie(x, y), 5);
+      n.spawnT = (n.spawnT ?? this.nestSpawnEvery * this.rng.range(0.3, 1)) - step;
+      if (n.spawnT <= 0) {
+        n.spawnT = this.nestSpawnEvery;
+        const spot = this.zombies.length < ZOMBIE_CAP && freeSpot();
+        if (spot) {
+          const z = this.spawnZombie(this.rollZombieKind(this.day - 1), spot[0] + 0.5, spot[1] + 0.5, 'wander');
+          z.roam = true;
+          z.from = n;
+          this.spawnedToday++;
+        }
+      }
       const underAttack = this.time - n.lastHit < 8;
       if (underAttack) {
         n.defendT -= step;
@@ -1291,10 +1235,10 @@ export class Game {
     this.sound('zdeath', c.x, c.y, { kind: 'brute' });
     const left = this.nestsAlive;
     if (left) {
-      this.msg(`Ninho destruído! Restam ${left}. As hordas vão ficar menores.`, 'good');
+      this.msg(`Ninho destruído! Restam ${left}. Um ninho a menos soltando zumbis.`, 'good');
     } else if (!this.won) {
       this.won = true;
-      this.msg('O último ninho caiu. A região está livre do foco da infecção!', 'good');
+      this.msg('O último ninho caiu. Não nascem mais zumbis na região!', 'good');
     }
   }
 
@@ -1498,7 +1442,7 @@ export class Game {
     }
     if (o && o.kind === 'ruin') {
       if (o.empty) {
-        this.msg(`Não sobrou nada nesta ${o.def.name.toLowerCase()}.`, 'info');
+        this.msg(`Não sobrou nada ${nesta(o.def)}.`, 'info');
         return null;
       }
       for (const u of units) this.setTask(u, { kind: 'loot', ruin: o });
@@ -1644,7 +1588,7 @@ export class Game {
     switch (t.kind) {
       case 'move': return 'Andando';
       case 'gather': return t.res === 'wood' ? 'Cortando madeira' : 'Quebrando pedra';
-      case 'loot': return `Saqueando ${t.ruin.def.name.toLowerCase()}`;
+      case 'loot': return `${t.ruin.def.vehicle ? 'Desmontando' : 'Saqueando'} ${t.ruin.def.name.toLowerCase()}`;
       case 'build':
         if (!t.b.complete) return `Construindo ${t.b.def.name.toLowerCase()}`;
         if (t.b.upgrade) return `Reformando ${t.b.def.name.toLowerCase()}`;

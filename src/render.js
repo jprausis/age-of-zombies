@@ -3,7 +3,7 @@ import { hash2 } from './rng.js';
 import { HW, HH, fromIso } from './iso.js';
 import { C, P, poly, diamond } from './draw/shapes.js';
 import { paintTree, paintRock, decorAt, paintDecor, DECOR_SIZE, waterGlint } from './draw/nature.js';
-import { drawRuin, drawNest, lootMarker, drawHQ, drawTent, drawDepot, drawFarm, drawTower, drawWall, scaffold } from './draw/buildings.js';
+import { drawRuin, drawNest, lootMarker, drawHQ, drawTent, drawDepot, drawFarm, drawTower, drawWall, drawScrapyard, scaffold } from './draw/buildings.js';
 import { drawUnit, drawZombie, drawZombieEyes, drawBadge, bar } from './draw/actors.js';
 
 // Grupos de terreno para as transições: o de prioridade maior "invade" a borda do vizinho.
@@ -489,6 +489,7 @@ export class Renderer {
       case 'depot': height = drawDepot(ctx, b, env); break;
       case 'farm': height = drawFarm(ctx, b, env); break;
       case 'tower': height = drawTower(ctx, b, env); break;
+      case 'scrapyard': height = drawScrapyard(ctx, b, env); break;
       default: height = drawWall(ctx, b, env);
     }
     ctx.globalAlpha = 1;

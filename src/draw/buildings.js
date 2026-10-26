@@ -10,6 +10,7 @@ import {
 const litWindow = (env) => (env.dark > 0.3 ? `rgba(240,190,90,${0.35 + env.dark * 0.6})` : '#1d1a15');
 
 export function drawRuin(ctx, r, env) {
+  if (r.def.vehicle) return drawVehicle(ctx, r);
   const dim = r.empty ? 0.62 : 1;
   const wall = C.ruinWall[r.type], roof = C.roof[r.type];
   const ins = 0.12;
@@ -72,7 +73,7 @@ export function drawRuin(ctx, r, env) {
 export function lootMarker(ctx, r, color, now) {
   const [mx, my] = P(r.x + r.w / 2, r.y + r.h / 2);
   const bob = Math.sin(now * 2.2 + r.id) * 2;
-  const top = my - 62 + bob;
+  const top = my - (r.def.vehicle ? 40 : 62) + bob;
   poly(ctx, [[mx - 7, top - 6], [mx + 7, top - 6], [mx, top + 6]], 'rgba(20,18,14,0.9)');
   disc(ctx, mx, top - 7, 7, 'rgba(20,18,14,0.9)');
   disc(ctx, mx, top - 7, 4.5, color);
@@ -533,4 +534,125 @@ export function drawNest(ctx, n, env) {
   if (n.hitT > 0) ellipse(ctx, x, y - 16, 46, 26, `rgba(230,120,90,${Math.min(0.5, n.hitT * 3)})`);
   env.smoke(x, y - 38, 0.3);
   return 46;
+}
+
+// ---------------------------------------------------------------- veículos e ferro-velho
+
+const CAR_PAINT = ['#7a3b2e', '#4d5f6e', '#8a8064', '#5b6b4a', '#9a9c94', '#6b4a5e'];
+
+// Carro abandonado (ou caminhão tombado): carroceria, cabine com vidro quebrado, rodas e ferrugem.
+// Depois de desmontado, sobra só o chassi.
+function drawVehicle(ctx, r) {
+  const along = r.w >= r.h; // eixo comprido ao longo de x?
+  const truck = r.type === 'caminhao';
+  const ins = 0.1;
+  const x = r.x + ins, y = r.y + ins, w = r.w - 2 * ins, h = r.h - 2 * ins;
+  const paint = truck ? '#5d6a72' : CAR_PAINT[r.id % CAR_PAINT.length];
+  const dim = r.empty ? 0.55 : 1;
+  poly(ctx, diamond(x + 0.15, y + 0.15, w, h), C.shadow);
+  // Rodas nas faces visíveis
+  const wheel = (tx, ty) => {
+    const [wx, wy] = P(tx, ty);
+    ellipse(ctx, wx, wy - 3, 4, 3.4, '#1b1a18');
+    ellipse(ctx, wx, wy - 3, 1.6, 1.3, '#55534c');
+  };
+  if (along) {
+    for (const f of truck ? [0.15, 0.5, 0.85] : [0.2, 0.8]) wheel(x + w * f, y + h);
+  } else {
+    for (const f of truck ? [0.15, 0.5, 0.85] : [0.2, 0.8]) wheel(x + w, y + h * f);
+  }
+  if (r.empty) {
+    // Só o chassi enferrujado
+    box(ctx, x + 0.1, y + 0.1, w - 0.2, h - 0.2, 3, 6, C.rust, dim);
+    return 14;
+  }
+  const bodyH = truck ? 10 : 9;
+  const b = box(ctx, x, y, w, h, 3, bodyH, paint, dim);
+  // Ferrugem e amassados
+  faceQuad(ctx, b.W, b.S, 0.1 + hash2(r.id, 1) * 0.5, 0.25 + hash2(r.id, 1) * 0.5, 3, 7, 'rgba(122,74,42,0.65)');
+  faceQuad(ctx, b.S, b.E, 0.2, 0.45, 4, 8, 'rgba(122,74,42,0.5)');
+  if (truck) {
+    // Baú do caminhão em 2/3 do comprimento e cabine na ponta
+    const cut = 0.68;
+    const [bx, by, bw, bh] = along ? [x, y, w * cut, h] : [x, y, w, h * cut];
+    const cargo = box(ctx, bx, by, bw, bh, bodyH, 30, '#8a8a80', dim);
+    faceLines(ctx, cargo.W, cargo.S, bodyH, 30, 5, 'rgba(0,0,0,0.18)');
+    faceQuad(ctx, cargo.W, cargo.S, 0.55, 0.9, 14, 24, 'rgba(122,74,42,0.45)');
+    const [cx, cy, cw, ch] = along ? [x + w * (cut + 0.04), y, w * (1 - cut - 0.04), h] : [x, y + h * (cut + 0.04), w, h * (1 - cut - 0.04)];
+    const cab = box(ctx, cx, cy, cw, ch, bodyH, 22, paint, dim);
+    faceQuad(ctx, cab.W, cab.S, 0.15, 0.85, 14, 20, 'rgba(25,30,32,0.85)');
+    faceQuad(ctx, cab.S, cab.E, 0.15, 0.85, 14, 20, 'rgba(25,30,32,0.85)');
+    return 34;
+  }
+  // Cabine no meio do carro, vidros escuros com rachaduras
+  const [cx, cy, cw, ch] = along ? [x + w * 0.28, y + 0.04, w * 0.46, h - 0.08] : [x + 0.04, y + h * 0.28, w - 0.08, h * 0.46];
+  const cab = box(ctx, cx, cy, cw, ch, bodyH, bodyH + 7, paint, dim * 0.95);
+  faceQuad(ctx, cab.W, cab.S, 0.08, 0.92, bodyH + 1, bodyH + 6, 'rgba(25,30,32,0.88)');
+  faceQuad(ctx, cab.S, cab.E, 0.1, 0.9, bodyH + 1, bodyH + 6, 'rgba(40,48,52,0.88)');
+  const crack = lerp(cab.W, cab.S, 0.3 + hash2(r.id, 3) * 0.4);
+  line(ctx, [crack[0], crack[1] - bodyH - 1], [crack[0] + 3, crack[1] - bodyH - 6], 'rgba(200,215,220,0.55)', 1);
+  // Porta aberta pendurada, de vez em quando
+  if (hash2(r.id, 7) > 0.5) {
+    const d = lerp(b.W, b.S, 0.55);
+    poly(ctx, [[d[0], d[1] - 3], [d[0] - 5, d[1] + 1], [d[0] - 5, d[1] - 6], [d[0], d[1] - bodyH]], shade(paint, 0.7 * dim));
+  }
+  return 22;
+}
+
+// Ferro-velho: pátio cercado com montes de lata, prensa (nível 2) e fundição com chaminé (nível 3).
+export function drawScrapyard(ctx, b, env) {
+  const { x, y, level } = b;
+  poly(ctx, diamond(x + 0.05, y + 0.05, 2.9, 2.9), '#4b4438');
+  // Manchas de óleo
+  const [ox, oy] = P(x + 1.9, y + 1.1);
+  ellipse(ctx, ox, oy, 12, 5, 'rgba(20,18,16,0.5)');
+  // Montes de sucata coloridos
+  const heap = (tx, ty, s, k) => {
+    const [hx, hy] = P(tx, ty);
+    poly(ctx, [[hx - 16 * s, hy], [hx - 6 * s, hy - 14 * s], [hx + 4 * s, hy - 17 * s], [hx + 16 * s, hy]], '#5d5a52');
+    for (let i = 0; i < 6; i++) {
+      const px = hx + (hash2(k, i) - 0.5) * 22 * s, py = hy - 3 - hash2(i, k) * 11 * s;
+      const col = ['#7a4a2a', '#6a7176', '#8a3a2e', '#9a9c94', '#4d5f6e', '#a8843c'][(i + k) % 6];
+      poly(ctx, [[px - 4 * s, py], [px - 1 * s, py - 4 * s], [px + 4 * s, py - 2 * s], [px + 2 * s, py + 2 * s]], col);
+    }
+    disc(ctx, hx + 6 * s, hy - 6 * s, 3 * s, '#1b1a18'); // pneu
+    disc(ctx, hx + 6 * s, hy - 6 * s, 1.3 * s, '#4a4842');
+  };
+  heap(x + 0.8, y + 0.9, 1, 1);
+  heap(x + 2.1, y + 0.7, 0.8, 2);
+  if (level < 1) heap(x + 1.6, y + 2.0, 1.1, 3);
+  if (level >= 1) {
+    // Prensa hidráulica e um cubo de lata prensada
+    const pr = box(ctx, x + 1.2, y + 1.6, 0.9, 0.9, 0, 18, '#6a6a3a');
+    faceQuad(ctx, pr.W, pr.S, 0.15, 0.85, 4, 12, '#2a2a20');
+    const k = (Math.sin((env ? env.now : 0) * 2 + b.id) + 1) / 2;
+    box(ctx, x + 1.35, y + 1.75, 0.6, 0.6, 18, 22 + k * 4, '#8a8a80');
+    box(ctx, x + 2.3, y + 2.2, 0.45, 0.45, 0, 8, '#7a6a5a');
+  }
+  if (level >= 2) {
+    // Fundição: forno de tijolo com chaminé e brilho
+    const f = box(ctx, x + 0.25, y + 1.9, 0.8, 0.8, 0, 16, C.brick);
+    faceQuad(ctx, f.W, f.S, 0.3, 0.7, 2, 9, `rgba(240,140,50,${0.7 + 0.3 * Math.sin((env ? env.now : 0) * 6)})`);
+    const [cx, cy] = P(x + 0.5, y + 2.15);
+    cylinder(ctx, cx, cy - 16, 3.5, 22, '#5a4a42');
+    if (env) env.smoke(cx, cy - 40, 0.6);
+  }
+  // Cerca de arame com postes nas duas frentes visíveis
+  ctx.strokeStyle = 'rgba(170,175,170,0.55)';
+  ctx.lineWidth = 1;
+  const W0 = P(x + 0.05, y + 2.95), S0 = P(x + 2.95, y + 2.95), E0 = P(x + 2.95, y + 0.05);
+  for (const [A, B] of [[W0, S0], [S0, E0]]) {
+    for (let k = 0; k <= 4; k++) {
+      const p = lerp(A, B, k / 4);
+      line(ctx, p, [p[0], p[1] - 12], '#5a5650', 1.6);
+    }
+    ctx.strokeStyle = 'rgba(170,175,170,0.5)';
+    ctx.beginPath();
+    for (const z of [4, 8, 12]) {
+      ctx.moveTo(A[0], A[1] - z);
+      ctx.lineTo(B[0], B[1] - z);
+    }
+    ctx.stroke();
+  }
+  return level >= 2 ? 44 : level >= 1 ? 30 : 24;
 }

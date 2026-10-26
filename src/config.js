@@ -16,7 +16,9 @@ export const ROCK_AMOUNT = 60;
 export const DAY_LENGTH = 150;
 export const NIGHT_LENGTH = 90;
 export const WIN_DAY = 10; // marco de sobrevivência (a vitória é destruir os ninhos)
-export const FIRST_HORDE_NIGHT = 2; // a primeira noite é calma
+export const FIRST_HORDE_NIGHT = 2; // a primeira noite é calma; depois, os mortos por perto atacam à noite
+export const NIGHT_PULL = 24; // raio (tiles) em volta do acampamento de onde os zumbis vêm à noite
+export const ZOMBIE_CAP = 280; // teto de zumbis no mapa, pelo desempenho
 
 export const RES_NAMES = { wood: 'Madeira', stone: 'Pedra', food: 'Comida', scrap: 'Sucata' };
 export const RES_ORDER = ['wood', 'stone', 'food', 'scrap'];
@@ -114,6 +116,15 @@ export const BUILDINGS = {
       { name: 'Ninho de metralhadora', cost: { stone: 40, scrap: 60 }, buildTime: 28, hp: 850, range: 9, dmg: 9, cooldown: 0.25, desc: 'Rajadas contínuas.' },
     ],
   },
+  scrapyard: {
+    name: 'Ferro-velho', w: 3, h: 3, hp: 300, cost: { wood: 60, stone: 20 }, buildTime: 20, sight: 3, key: 'v',
+    produce: { res: 'scrap', every: 7 },
+    desc: 'Desmonta entulho e lata velha: 1 de sucata a cada 7 s, sem precisar de ninguém.',
+    levels: [
+      { name: 'Ferro-velho com prensa', cost: { wood: 40, stone: 40, scrap: 15 }, buildTime: 20, hp: 450, produce: { res: 'scrap', every: 4.5 }, desc: '1 de sucata a cada 4,5 s.' },
+      { name: 'Fundição', cost: { stone: 60, scrap: 40 }, buildTime: 28, hp: 650, produce: { res: 'scrap', every: 2.8 }, desc: '1 de sucata a cada 2,8 s.' },
+    ],
+  },
   farm: {
     name: 'Horta', w: 3, h: 3, hp: 160, cost: { wood: 50 }, buildTime: 15, sight: 3, foodInterval: 4, key: 'h',
     desc: 'Produz 1 de comida a cada 4 segundos.',
@@ -137,7 +148,7 @@ export function buildingDef(type, level = 0) {
   return d;
 }
 
-export const BUILD_ORDER = ['tent', 'depot', 'palisade', 'stonewall', 'gate', 'tower', 'farm'];
+export const BUILD_ORDER = ['tent', 'depot', 'palisade', 'stonewall', 'gate', 'tower', 'farm', 'scrapyard'];
 
 export const RECRUIT = { time: 15, maxQueue: 5 };
 
@@ -146,6 +157,9 @@ export const NEST = {
   name: 'Ninho', count: 3, w: 3, h: 3,
   hp: [1800, 2600, 3600], // do mais perto ao mais longe
   regen: 8, // vida por segundo depois de 8 s sem levar tiro
+  spawnEvery: 24, // segundos entre zumbis soltos por ninho no dia 1
+  spawnFaster: 2, // a cada dia o intervalo cai isso...
+  spawnMin: 8, // ...até este mínimo
   guards: 6, // errantes rondando em volta
   defenders: 10, // máximo de defensores soltos quando está sob ataque
   defendEvery: 3, // segundos entre levas de defensores
@@ -156,19 +170,28 @@ export const NEST = {
 
 export const RUINS = {
   casa: {
-    name: 'Casa abandonada', w: 2, h: 2,
+    name: 'Casa abandonada', w: 2, h: 2, g: 'f',
     loot: { food: [15, 35], scrap: [4, 12], wood: [5, 15] }, survivor: 0.18, lurk: 0.25,
   },
   mercado: {
-    name: 'Mercadinho', w: 3, h: 2,
+    name: 'Mercadinho', w: 3, h: 2, g: 'm',
     loot: { food: [50, 90], scrap: [4, 10] }, survivor: 0.1, lurk: 0.45,
   },
   oficina: {
-    name: 'Oficina mecânica', w: 3, h: 2,
+    name: 'Oficina mecânica', w: 3, h: 2, g: 'f',
     loot: { scrap: [30, 60], wood: [8, 20], stone: [0, 10] }, survivor: 0.1, lurk: 0.3,
   },
   cabana: {
-    name: 'Cabana', w: 2, h: 2,
+    name: 'Cabana', w: 2, h: 2, g: 'f',
     loot: { food: [10, 20], wood: [10, 25] }, survivor: 0.25, lurk: 0.2,
+  },
+  // Veículos abandonados: desmontar rende sucata. Ficam nas ruas e estradas.
+  carro: {
+    name: 'Carro abandonado', w: 2, h: 1, g: 'm', vehicle: true, verb: 'desmontar',
+    loot: { scrap: [16, 28] }, survivor: 0, lurk: 0.12,
+  },
+  caminhao: {
+    name: 'Caminhão tombado', w: 3, h: 1, g: 'm', vehicle: true, verb: 'desmontar',
+    loot: { scrap: [34, 55], food: [0, 12] }, survivor: 0, lurk: 0.2,
   },
 };

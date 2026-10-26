@@ -5,7 +5,7 @@ const KEY_TO_BUILD = Object.fromEntries(BUILD_ORDER.map((t) => [BUILDINGS[t].key
 const EDGE = 10;
 const PAN_SPEED = 900; // px de tela por segundo
 // Altura aproximada (px isométricos) de cada coisa, para clicar no telhado e não só no chão.
-const HEIGHT = { hq: 40, tent: 32, depot: 24, farm: 10, tower: 92, palisade: 32, stonewall: 28, gate: 30 };
+const HEIGHT = { hq: 40, tent: 32, depot: 24, farm: 10, tower: 92, palisade: 32, stonewall: 28, gate: 30, scrapyard: 30 };
 const RUIN_HEIGHT = 44;
 
 export class Input {
@@ -275,7 +275,7 @@ export class Input {
     return this.pickVolume(p, (tx, ty, off) => {
       const o = m.occ[m.idx(tx, ty)];
       if (!o) return null;
-      const h = o.kind === 'ruin' ? RUIN_HEIGHT : o.kind === 'nest' ? 46 : HEIGHT[o.type] || 30;
+      const h = o.kind === 'ruin' ? (o.def.vehicle ? 26 : RUIN_HEIGHT) : o.kind === 'nest' ? 46 : HEIGHT[o.type] || 30;
       return off <= h ? { hit: o, d: o.x + o.y + (o.w + o.h) / 2 } : null;
     });
   }

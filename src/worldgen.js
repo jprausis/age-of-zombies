@@ -78,7 +78,8 @@ export function generateWorld(game, rng) {
     roadSegment(m, setTile, { ...town, x: town.horizontal ? town.x + town.crossOffset : town.x, y: town.horizontal ? town.y : town.y + town.crossOffset }, town.crossLen, !town.horizontal);
   }
 
-  for (const town of towns) connectRoad(m, setTile, cx, cy, town.x, town.y, rng);
+  const trails = [];
+  for (const town of towns) trails.push(connectRoad(m, setTile, cx, cy, town.x, town.y, rng));
 
   const placeRuin = (type, x, y, w, h) => {
     if (x < 2 || y < 2 || x + w > W - 2 || y + h > H - 2) return null;
@@ -180,9 +181,68 @@ export function generateWorld(game, rng) {
   nests.sort((p, q) => p.d - q.d);
   // Abre uma trilha até cada ninho, para não ficarem ilhados atrás de água ou pedra.
   nests.forEach((n, k) => {
-    connectRoad(m, setTile, cx, cy, n.x + 1, n.y + 1, rng);
+    trails.push(connectRoad(m, setTile, cx, cy, n.x + 1, n.y + 1, rng));
     game.createNest(n.x, n.y, NEST.hp[Math.min(k, NEST.hp.length - 1)]);
   });
+
+  // Veículos abandonados: nas ruas das cidades (numa faixa só, a outra fica livre),
+  // na beira das trilhas e dois perto do acampamento. São a principal fonte de sucata.
+  const freeRect = (x, y, w, h, ok) => {
+    for (let yy = y - 1; yy <= y + h; yy++) {
+      for (let xx = x - 1; xx <= x + w; xx++) {
+        if (!m.inBounds(xx, yy) || m.occ[m.idx(xx, yy)]) return false;
+        const inside = xx >= x && xx < x + w && yy >= y && yy < y + h;
+        if (inside && !ok(m.get(xx, yy))) return false;
+      }
+    }
+    return true;
+  };
+  const vehicle = (x, y, along, ok, truck = rng.chance(0.18)) => {
+    const len = truck ? 3 : 2;
+    const [w, h] = along ? [len, 1] : [1, len];
+    if (x < 2 || y < 2 || x + w > W - 2 || y + h > H - 2 || !freeRect(x, y, w, h, ok)) return null;
+    for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) if (m.get(xx, yy) !== T.ROAD) setTile(xx, yy, T.DIRT);
+    return game.createRuin(truck ? 'caminhao' : 'carro', x, y, w, h);
+  };
+  const onRoad = (t) => t === T.ROAD;
+  const offRoad = (t) => t === T.GRASS || t === T.DIRT || t === T.SAND || t === T.RUBBLE;
+  let vehicles = 0;
+  for (const town of towns) {
+    const streets = [
+      { x: town.x, y: town.y, len: town.mainLen, horizontal: town.horizontal },
+      { x: town.horizontal ? town.x + town.crossOffset : town.x, y: town.horizontal ? town.y : town.y + town.crossOffset, len: town.crossLen, horizontal: !town.horizontal },
+    ];
+    for (const st of streets) {
+      const half = Math.floor(st.len / 2);
+      for (let p = -half; p < half - 2; p += rng.int(4, 7)) {
+        if (!rng.chance(0.55)) continue;
+        const lane = rng.int(0, 1);
+        const [x, y] = st.horizontal ? [st.x + p, st.y + lane] : [st.x + lane, st.y + p];
+        // Só numa faixa: a outra continua livre para passar.
+        const other = st.horizontal ? [x, st.y + 1 - lane] : [st.x + 1 - lane, y];
+        if (m.occ[m.idx(other[0], other[1])]) continue;
+        if (vehicle(x, y, st.horizontal, onRoad)) vehicles++;
+      }
+    }
+  }
+  for (const pts of trails) {
+    for (let i = 4; i < pts.length - 4; i += rng.int(9, 15)) {
+      const p = pts[i];
+      const side = rng.chance(0.5) ? 1 : -1;
+      const along = Math.abs(p.ny) > Math.abs(p.nx); // a trilha corre mais em x quando a normal aponta em y
+      const x = Math.round(p.x + p.nx * 3 * side), y = Math.round(p.y + p.ny * 3 * side);
+      if (vehicle(x, y, along, offRoad)) vehicles++;
+    }
+  }
+  for (let tries = 0, near = 0; near < 2 && tries < 300; tries++) {
+    const a = rng() * Math.PI * 2, d = rng.range(9, 16);
+    const r = vehicle(Math.round(cx + Math.cos(a) * d), Math.round(cy + Math.sin(a) * d), rng.chance(0.5), offRoad, false);
+    if (!r) continue;
+    r.lurkers = 0;
+    near++;
+    vehicles++;
+  }
+  game.vehicleCount = vehicles;
 
   const hq = game.createBuilding('hq', cx - 1, cy - 1, true);
   START_ROLES.forEach((role, i) => {
@@ -239,12 +299,14 @@ function connectRoad(m, setTile, x0, y0, x1, y1, rng) {
   const nx = -(y1 - y0) / len, ny = (x1 - x0) / len;
   const bend = rng.range(-8, 8);
   const steps = Math.ceil(len * 2);
+  const pts = [];
   for (let s = 0; s <= steps; s++) {
     const t = s / steps;
     const off = Math.sin(t * Math.PI) * bend;
     const x = Math.floor(x0 + (x1 - x0) * t + nx * off);
     const y = Math.floor(y0 + (y1 - y0) * t + ny * off);
     if (Math.hypot(x - x0, y - y0) < 6) continue;
+    if (s % 2 === 0) pts.push({ x, y, nx, ny });
     for (let dy = 0; dy < 2; dy++) {
       for (let dx = 0; dx < 2; dx++) {
         const nx = x + dx, ny = y + dy;
@@ -253,4 +315,5 @@ function connectRoad(m, setTile, x0, y0, x1, y1, rng) {
       }
     }
   }
+  return pts;
 }

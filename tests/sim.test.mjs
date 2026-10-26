@@ -98,17 +98,28 @@ assert.equal(tent.def.name, 'Cabana de toras');
 assert.equal(g.popCap, capBefore + 2, 'abrigo aumentou');
 console.log('evolução ok:', tent.def.name, 'abrigo', g.popCap);
 
-// 4. Primeira noite calma; na segunda, a horda nasce e vai em direção ao acampamento
+// 4. Primeira noite calma; na segunda, os errantes perto do acampamento atacam
+for (let i = 0; i < 10; i++) {
+  const a = (i / 10) * Math.PI * 2;
+  const spot = g.freeTileNear(Math.round(hq.x + 1 + Math.cos(a) * 19), Math.round(hq.y + 1 + Math.sin(a) * 19), (x, y) => !g.blockZombie(x, y), 4);
+  if (spot) g.spawnZombie('walker', spot[0] + 0.5, spot[1] + 0.5, 'wander');
+}
 run(g, DAY_LENGTH - g.clock + 2);
-assert.equal(g.hordeRemaining, 0, 'primeira noite sem horda');
+assert.equal(g.hordeRemaining, 0, 'primeira noite sem ataque');
 run(g, DAY_LENGTH + NIGHT_LENGTH - g.clock + 1); // amanhece no dia 2
 assert.equal(g.day, 2);
+for (let i = 0; i < 10; i++) {
+  const a = (i / 10) * Math.PI * 2;
+  const spot = g.freeTileNear(Math.round(hq.x + 1 + Math.cos(a) * 19), Math.round(hq.y + 1 + Math.sin(a) * 19), (x, y) => !g.blockZombie(x, y), 4);
+  if (spot) g.spawnZombie('walker', spot[0] + 0.5, spot[1] + 0.5, 'wander');
+}
 run(g, DAY_LENGTH - g.clock - 1);
-const before = g.zombies.length;
+const nearCamp = g.zombiesNearCamp().length;
 run(g, 2);
 const horde = g.zombies.filter((z) => z.mode === 'horde');
-console.log(`noite: ${before} → ${g.zombies.length} zumbis, ${horde.length} em horda`);
-assert.ok(horde.length >= 8, 'horda nasceu');
+console.log(`noite: ${nearCamp} errantes perto do acampamento, ${horde.length} atacando`);
+assert.ok(horde.length >= 6 && horde.length >= nearCamp * 0.8, 'errantes por perto atacam à noite');
+assert.ok(!g.zombies.some((z) => z.mode === 'horde' && Math.hypot(z.x - hq.x, z.y - hq.y) > 30), 'quem está longe não vem');
 const avgDist = (zs) => zs.reduce((s, z) => s + Math.hypot(z.x - hq.x, z.y - hq.y), 0) / zs.length;
 const d0 = avgDist(horde);
 run(g, 20);
@@ -169,18 +180,54 @@ assert.ok(damaged > 0 || g2.stats.kills > 0, 'zumbis chegam à cerca');
   for (const n of g4.nests) if (!n.dead) g4.destroyNest(n);
   assert.ok(g4.won, 'vence ao destruir todos os ninhos');
 
-  // Hordas saem de um ninho vivo.
+  // Ninhos soltam zumbis com o tempo, cada vez mais rápido, e eles se espalham pelo mapa.
   const g5 = new Game(8);
-  g5.day = 3;
-  g5.clock = DAY_LENGTH - 26;
-  run(g5, 2);
-  const origin = g5.hordeNest;
-  assert.ok(origin, 'horda tem ninho de origem');
-  run(g5, 26);
-  const hz = g5.zombies.filter((z) => z.mode === 'horde');
-  const near = hz.filter((z) => Math.hypot(z.x - origin.x - 1.5, z.y - origin.y - 1.5) < 10).length;
-  console.log(`horda do ninho: ${hz.length} zumbis, ${near} perto da origem`);
-  assert.ok(hz.length >= 8 && near / hz.length > 0.7, 'horda nasce perto do ninho');
+  const n5 = g5.nests[0];
+  const c5 = { x: n5.x + 1.5, y: n5.y + 1.5 };
+  run(g5, 120);
+  const day1 = g5.zombies.filter((z) => z.from === n5);
+  const far = day1.filter((z) => Math.hypot(z.x - c5.x, z.y - c5.y) > 8).length;
+  console.log(`ninho em 120 s (dia 1): ${day1.length} soltos, ${far} já a mais de 8 tiles`);
+  assert.ok(day1.length >= 3 && day1.length <= 7, 'ritmo do dia 1');
+  assert.ok(far >= 1, 'zumbis soltos se espalham');
+  g5.day = 6;
+  const before5 = g5.zombies.filter((z) => z.from === n5).length;
+  run(g5, 60);
+  const gained = g5.zombies.filter((z) => z.from === n5).length - before5;
+  console.log(`ninho no dia 6: +${gained} em 60 s (um a cada ${g5.nestSpawnEvery} s)`);
+  assert.ok(gained >= 3, 'solta mais rápido com os dias');
+  g5.destroyNest(n5);
+  const after = g5.zombies.filter((z) => z.from === n5).length;
+  run(g5, 60);
+  assert.equal(g5.zombies.filter((z) => z.from === n5 && !z.dead).length <= after, true, 'ninho destruído para de soltar');
+}
+
+// 5c. Sucata: veículos no mapa, desmontar rende sucata, e o ferro-velho produz sozinho.
+{
+  const g6 = new Game(42);
+  g6.map.explored.fill(1);
+  const cars = g6.ruins.filter((r) => r.def.vehicle);
+  console.log(`veículos: ${cars.length}`);
+  assert.ok(cars.length >= 12, 'há veículos no mapa');
+  const car = [...cars].sort((p, q) => Math.hypot(p.x - g6.hq.x, p.y - g6.hq.y) - Math.hypot(q.x - g6.hq.x, q.y - g6.hq.y))[0];
+  car.lurkers = 0;
+  const pickers = g6.units.filter((u) => u.role === 'catador').slice(0, 2);
+  assert.equal(g6.orderSmart(pickers, car.x + 0.5, car.y + 0.5), 'loot');
+  assert.ok(g6.describeTask(pickers[0]).startsWith('Desmontando'));
+  const scrap0 = g6.res.scrap;
+  run(g6, 45);
+  console.log(`desmonte: sucata ${scrap0} → ${g6.res.scrap}`);
+  assert.ok(g6.res.scrap > scrap0 + 10, 'desmontar rende sucata');
+
+  g6.res.wood += 200; g6.res.stone += 100;
+  const spot = g6.freeTileNear(g6.hq.x - 6, g6.hq.y - 6, (x, y) => g6.canPlace('scrapyard', x, y).ok, 10);
+  const yard = g6.placeBuilding('scrapyard', spot[0], spot[1]).building;
+  yard.complete = true; yard.hp = yard.maxHp;
+  const s1 = g6.res.scrap;
+  for (const u of g6.units) g6.setTask(u, null);
+  run(g6, 35);
+  console.log(`ferro-velho: +${g6.res.scrap - s1} sucata em 35 s`);
+  assert.ok(g6.res.scrap - s1 >= 4, 'ferro-velho produz sucata');
 }
 
 // 6. Partida longa sem jogador: não pode quebrar
