@@ -485,3 +485,52 @@ export function scaffold(ctx, b, hgt) {
   ctx.lineTo(front[2][0], front[2][1] - top);
   ctx.stroke();
 }
+
+// Ninho: um monte de carne e entulho que pulsa, com bolhas que brilham à noite.
+export function drawNest(ctx, n, env) {
+  const cx = n.x + n.w / 2, cy = n.y + n.h / 2;
+  const [x, y] = P(cx, cy);
+  const beat = 1 + Math.sin(env.now * 2.4 + n.seed * 10) * 0.035;
+  // Gavinhas espalhadas pelo chão
+  ctx.lineCap = 'round';
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 9) * Math.PI * 2 + n.seed * 6;
+    const len = 1.9 + hash2(n.id, k) * 1.4;
+    const p0 = P(cx + Math.cos(a) * 1.1, cy + Math.sin(a) * 1.1);
+    const p1 = P(cx + Math.cos(a + 0.25) * (len * 0.6), cy + Math.sin(a + 0.25) * (len * 0.6));
+    const p2 = P(cx + Math.cos(a - 0.1) * len, cy + Math.sin(a - 0.1) * len);
+    ctx.strokeStyle = '#3d1a22';
+    ctx.lineWidth = 4 - hash2(k, n.id) * 1.5;
+    ctx.beginPath();
+    ctx.moveTo(p0[0], p0[1]);
+    ctx.quadraticCurveTo(p1[0], p1[1], p2[0], p2[1]);
+    ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+  ellipse(ctx, x + 6, y + 4, 52, 24, C.shadow);
+  // Corpo em camadas, do mais escuro (base) ao mais claro (topo)
+  const layers = [['#3a1820', 50, 24, 0], ['#552530', 42, 21, 10], ['#6e3038', 32, 17, 21], ['#82404a', 21, 12, 31]];
+  for (const [col, rx, ry, h] of layers) {
+    ellipse(ctx, x, y - h * beat, rx * beat, ry * beat, col);
+  }
+  // Costelas e entulho presos na massa
+  for (let k = 0; k < 5; k++) {
+    const a = -2.6 + k * 0.55 + n.seed;
+    const bx = x + Math.cos(a) * 30, by = y - 12 + Math.sin(a) * 12;
+    line(ctx, [bx, by], [bx + Math.cos(a) * 9, by - 10], '#cfc4a8', 2);
+  }
+  // Bolhas pulsando
+  const glow = 0.5 + env.dark * 0.5;
+  for (let k = 0; k < 7; k++) {
+    const a = hash2(n.id * 3, k) * Math.PI * 2, r = 0.3 + hash2(k * 5, n.id) * 0.6;
+    const bx = x + Math.cos(a) * 34 * r, by = y - 14 - Math.sin(a) * 14 * r - hash2(k, k) * 14;
+    const p = 0.6 + 0.4 * Math.sin(env.now * 3 + k * 1.7);
+    disc(ctx, bx, by, 4 + 2 * p, `rgba(170,215,90,${(0.25 + 0.35 * p) * glow})`);
+    disc(ctx, bx, by, 2.2 + p, `rgba(215,240,140,${0.6 * glow + 0.2})`);
+  }
+  // Boca no topo
+  ellipse(ctx, x, y - 35 * beat, 9 * beat, 4 * beat, '#1a0a0e');
+  if (n.hitT > 0) ellipse(ctx, x, y - 16, 46, 26, `rgba(230,120,90,${Math.min(0.5, n.hitT * 3)})`);
+  env.smoke(x, y - 38, 0.3);
+  return 46;
+}

@@ -28,6 +28,7 @@ export const C = {
   sel: '#e3d9a6', ok: '#86a95d', warn: '#d9a441', bad: '#c2412d',
   res: { wood: '#c08850', stone: '#b4b2a8', food: '#d8c25a', scrap: '#8fb3c4' },
   jackets: ['#3f6b93', '#94643a', '#5d7d48', '#86506a', '#4c8783', '#7a7838', '#8a4a3c', '#5a5f8e'],
+  army: ['#4f5a34', '#5a5f3a', '#47522f'],
   pants: ['#2c2f36', '#3b3428', '#2f3a2c', '#34302c'],
   hats: ['#8a3a2e', '#2e4a6b', '#4a5a2e', '#6b6b6b', '#c2a050'],
   hair: ['#2a1d14', '#4a3020', '#7a5a30', '#1a1a1a', '#8a7a6a'],

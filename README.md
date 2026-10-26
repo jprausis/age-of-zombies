@@ -1,6 +1,6 @@
 # Age of Zombies
 
-RTS de sobrevivência no navegador, em visão isométrica. Você comanda um pequeno grupo de sobreviventes: monta um acampamento, junta recursos, saqueia cidades abandonadas e se fortifica contra as hordas de zumbis que chegam toda noite. A meta é aguentar 10 noites.
+RTS de sobrevivência no navegador, em visão isométrica. Você comanda um pequeno grupo de sobreviventes: monta um acampamento, junta recursos, saqueia cidades abandonadas e se fortifica contra as hordas de zumbis que chegam toda noite. As hordas saem de três ninhos espalhados pelo mapa; a meta é destruir os três.
 
 Feito com HTML5 Canvas e JavaScript puro (módulos ES), sem dependências e sem etapa de build.
 
@@ -26,30 +26,35 @@ npm test
 | Ação | Controle |
 | --- | --- |
 | Selecionar | clique, arrastar caixa, `Shift` para somar, duplo clique seleciona todos na tela |
-| Ordem contextual | botão direito: chão = mover, árvore/pedra = coletar, casa = saquear, zumbi = atacar, obra = construir/consertar, depósito = entregar |
+| Ordem contextual | botão direito: chão = mover, árvore/pedra = coletar, casa = saquear, zumbi ou ninho = atacar, obra = construir/consertar, depósito = entregar. Soldados mandados trabalhar fazem escolta |
 | Construir | painel inferior ou `B` barraca, `D` depósito, `C` cerca, `M` muro, `G` portão, `T` torre, `H` horta. Cercas e muros: arraste para fazer uma linha. `Shift` mantém o modo de construção |
 | Câmera | setas, mouse nas bordas, botão do meio arrastando, roda para zoom, clique no minimapa |
 | Evoluir | selecione a construção e use `U` (ou o botão no painel). Quem estiver parado vai trabalhar na reforma |
 | Grupo | painel à direita: clique seleciona, duplo clique leva a câmera; `.` vai para o próximo parado |
-| Outros | `E` todos, `X` parar, `R` recrutar, `Ctrl+1…9` / `1…9` grupos, `Espaço` último alerta, `P` pausar, `+`/`-` velocidade, `Del` demolir/cancelar, `F` quadros por segundo, `N` liga/desliga o som |
+| Recrutar | `R` catador, `S` soldado (ou pelos botões do acampamento) |
+| Outros | `E` todos, `X` parar, `Ctrl+1…9` / `1…9` grupos, `Espaço` último alerta, `P` pausar, `+`/`-` velocidade, `Del` demolir/cancelar, `F` quadros por segundo, `N` liga/desliga o som |
 
 ### Regras principais
 
+- **Objetivo:** destruir os 3 ninhos (pontos vermelhos no minimapa, sempre visíveis). Cada ninho tem mais vida quanto mais longe do acampamento, cresce 6% por dia, se regenera quando ninguém atira, solta levas de defensores e cospe ácido em quem chega perto. Cada ninho destruído rende sucata e comida e deixa as hordas menores; sem ninhos, as hordas param.
+- **Classes:** catadores (60 de vida, revólver fraco) coletam, saqueiam e constroem. Soldados (110 de vida, fuzil com mais dano e alcance) só lutam e custam 40 de comida e 25 de sucata. O grupo começa com 4 catadores e 1 soldado; quem é resgatado nas ruínas vira catador.
+- **Cura:** quem fica perto do acampamento sem apanhar recupera 2 de vida por segundo.
 - **Recursos:** madeira (árvores), pedra (rochas), comida (casas, mercados, hortas) e sucata (oficinas). Os sobreviventes carregam até 10 por viagem e entregam no acampamento ou num depósito.
 - **Ruínas:** casas, mercadinhos, oficinas e cabanas têm recursos. Às vezes há zumbis escondidos lá dentro, e às vezes um sobrevivente que entra para o grupo (se houver abrigo).
 - **Dia e noite:** o dia dura 150 s e a noite 90 s. A primeira noite é calma; as hordas começam na segunda. Uns 25 s antes de escurecer aparece o aviso da direção da horda. Ao anoitecer, a horda nasce na borda do mapa e os errantes próximos se juntam a ela.
 - **Evoluções:** acampamento (3 níveis), barraca → cabana de toras → casa de tijolos, depósito → armazém (+20% por entrega), cerca → com espetos (fere quem bate), muro → muralha, portão → de ferro, torre → torre de tiro → ninho de metralhadora, horta → irrigada → estufa.
 - **Sons:** tiros (espingarda, rifle da torre com eco, rajadas da metralhadora), gemidos, mordidas, pancadas em muros, sino de alerta antes da horda e corneta quando ela chega. Tudo sintetizado com Web Audio, sem arquivos; volume e lado dependem da distância até a câmera.
 - **Ícones:** sobre cada sobrevivente aparece o que ele está fazendo; o anel em volta enche conforme a carga. Âmbar piscando = parado.
-- **Hordas:** seguem um campo de fluxo até os prédios do acampamento. Muros entram no cálculo como obstáculo caro: se houver brecha, a horda passa por ela; se o acampamento estiver fechado, ela ataca o trecho mais fraco. A partir do dia 2 surgem corredores, e do dia 3 brutamontes.
+- **Hordas:** saem de um ninho (o aviso diz de qual direção) e seguem um campo de fluxo até os prédios do acampamento. Muros entram no cálculo como obstáculo caro: se houver brecha, a horda passa por ela; se o acampamento estiver fechado, ela ataca o trecho mais fraco. A partir do dia 2 surgem corredores, e do dia 3 brutamontes.
 - **Comida:** a cada amanhecer cada pessoa come 4. Se faltar, todos perdem vida.
 - **Mordidas:** quem morre tem 50% de chance de se levantar como zumbi.
+- **Vitória:** o último ninho cai. Dá para continuar jogando depois.
 - **Derrota:** o acampamento é destruído ou o grupo inteiro morre sem comida para recrutar.
 
 ## Estrutura
 
 ```
-index.html          página, HUD e estilos
+index.html          página, HUD, estilos e os ícones (SVG embutido)
 src/config.js       constantes e balanceamento (prédios, zumbis, ruínas, tempos)
 src/game.js         simulação: sobreviventes, zumbis, prédios, ciclo dia/noite, comandos
 src/worldgen.js     geração procedural do mapa, cidades e estradas
@@ -65,7 +70,8 @@ src/draw/nature.js  árvores, pedras e decoração (sprites pintados uma vez)
 src/draw/buildings.js  ruínas e construções em cada nível de evolução, andaimes
 src/draw/actors.js  sobreviventes, zumbis e ícones de atividade
 src/input.js        mouse, teclado, seleção, câmera e posicionamento de obras
-src/ui.js           HUD em DOM: recursos, relógio, seleção, botões e telas
+src/ui.js           HUD em DOM: recursos, relógio, objetivo (ninhos), alertas, seta da horda, grupo por classe,
+                    retrato da seleção, botões e telas
 src/audio.js        efeitos sonoros sintetizados (Web Audio) a partir dos eventos da simulação
 src/main.js         laço principal (simulação em passo fixo de 1/30 s)
 tests/sim.test.mjs  teste de fumaça da simulação
@@ -77,7 +83,7 @@ A simulação (`game.js` e afins) não toca no DOM e trabalha em coordenadas de 
 
 - Trilha sonora ambiente (vento, grilos à noite)
 - Armas e melhorias usando sucata (oficina, arsenal)
-- Profissões: lenhador, batedor, atirador, médico
+- Mais classes: batedor, médico
 - Controles por toque (toque longo como botão direito)
 - Salvar e carregar partida
 - Mais tipos de zumbi (cuspidor, explosivo) e eventos (chuva, neblina, comerciante)

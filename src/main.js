@@ -54,6 +54,7 @@ const hud = new HUD(state, {
     centerOnCamp();
   },
   centerOn: (tx, ty) => input.centerOn(tx, ty),
+  toScreen: (tx, ty) => input.toScreen(tx, ty),
   commandAt: (tx, ty) => input.commandAt(tx, ty),
   startBuild: (type) => input.startBuild(type),
   miniToTile: (u, v) => renderer.miniToTile(u, v),
@@ -80,6 +81,8 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 resize();
+// A fonte do HUD muda a altura das barras quando termina de carregar.
+document.fonts?.ready.then(resize);
 centerOnCamp();
 
 let last = performance.now();

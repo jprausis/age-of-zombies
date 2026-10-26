@@ -3,7 +3,7 @@ import { hash2 } from './rng.js';
 import { HW, HH, fromIso } from './iso.js';
 import { C, P, poly, diamond } from './draw/shapes.js';
 import { paintTree, paintRock, decorAt, paintDecor, DECOR_SIZE, waterGlint } from './draw/nature.js';
-import { drawRuin, lootMarker, drawHQ, drawTent, drawDepot, drawFarm, drawTower, drawWall, scaffold } from './draw/buildings.js';
+import { drawRuin, drawNest, lootMarker, drawHQ, drawTent, drawDepot, drawFarm, drawTower, drawWall, scaffold } from './draw/buildings.js';
 import { drawUnit, drawZombie, drawZombieEyes, drawBadge, bar } from './draw/actors.js';
 
 // Grupos de terreno para as transições: o de prioridade maior "invade" a borda do vizinho.
@@ -338,6 +338,9 @@ export class Renderer {
     };
     for (const r of g.ruins) if (rectVisible(r)) items.push({ d: r.x + r.y + (r.w + r.h) / 2, k: 3, o: r });
     for (const b of g.buildings) if (rectVisible(b)) items.push({ d: b.x + b.y + (b.w + b.h) / 2, k: 4, o: b });
+    for (const n of g.nests) {
+      if (!n.dead && m.explored[m.idx(n.x + 1, n.y + 1)] && rectVisible(n)) items.push({ d: n.x + n.y + (n.w + n.h) / 2, k: 8, o: n });
+    }
     const units = [];
     for (const u of g.units) {
       const [ix, iy] = P(u.x, u.y);
@@ -365,6 +368,7 @@ export class Renderer {
         case 5: drawUnit(ctx, it.o, state.selection.has(it.o), env, g.activity(it.o)); break;
         case 6: drawZombie(ctx, it.o, state.selected === it.o, env); break;
         case 7: this.drawDecor(ctx, it.x, it.y, it.o); break;
+        case 8: this.drawNestItem(ctx, it.o, state.selected === it.o, env); break;
       }
     }
     this.updateParticles(dt);
@@ -454,6 +458,13 @@ export class Renderer {
   drawRuinItem(ctx, r, selected, env) {
     drawRuin(ctx, r, env);
     if (selected) this.selectDiamond(ctx, r);
+  }
+
+  drawNestItem(ctx, n, selected, env) {
+    const h = drawNest(ctx, n, env);
+    if (selected) this.selectDiamond(ctx, n);
+    const [cx, cy] = P(n.x + n.w / 2, n.y + n.h / 2);
+    if (selected || n.hp < n.maxHp) bar(ctx, cx - 26, cy - h - 12, 52, n.hp / n.maxHp, C.bad);
   }
 
   lootColor(r) {
@@ -553,6 +564,18 @@ export class Renderer {
 
   drawTracers(ctx) {
     for (const t of this.game.tracers) {
+      if (t.kind === 'acid') {
+        const [x1, y1] = P(t.x1, t.y1), [x2, y2] = P(t.x2, t.y2);
+        const k = 1 - t.t / 0.25; // 0 = saiu da boca, 1 = chegou
+        const mx = (x1 + x2) / 2, my = Math.min(y1, y2) - 70;
+        const bx = (1 - k) ** 2 * x1 + 2 * (1 - k) * k * mx + k * k * x2;
+        const by = (1 - k) ** 2 * (y1 - 36) + 2 * (1 - k) * k * my + k * k * (y2 - 14);
+        ctx.fillStyle = 'rgba(170,215,90,0.9)';
+        ctx.beginPath();
+        ctx.arc(bx, by, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        continue;
+      }
       const tower = t.kind === 'tower';
       const [x1, y1] = P(t.x1, t.y1), [x2, y2] = P(t.x2, t.y2);
       ctx.strokeStyle = tower ? `rgba(255,220,140,${t.t * 9})` : `rgba(255,236,180,${t.t * 10})`;
@@ -753,6 +776,7 @@ export class Renderer {
       const o = m.occ[i];
       let c = col[m.tiles[i]];
       if (o && o.kind === 'ruin') c = o.empty ? [70, 58, 48] : [216, 194, 90];
+      else if (o && o.kind === 'nest') c = [190, 60, 90];
       else if (o && o.kind === 'building') c = o.def.wall ? [160, 140, 100] : [140, 200, 240];
       const k = m.visible[i] ? 1 : 0.6;
       d[p] = c[0] * k; d[p + 1] = c[1] * k; d[p + 2] = c[2] * k; d[p + 3] = 255;
@@ -783,6 +807,23 @@ export class Renderer {
       tc.lineWidth = 2;
       tc.beginPath();
       tc.ellipse(px, py, 3 + f * 12, (3 + f * 12) / 2, 0, 0, Math.PI * 2);
+      tc.stroke();
+    }
+    // Ninhos sempre aparecem no minimapa: são o objetivo.
+    const beat = 0.5 + 0.5 * Math.sin(performance.now() / 300);
+    for (const n of g.nests) {
+      if (n.dead) continue;
+      const [px, py] = toMini(n.x + n.w / 2, n.y + n.h / 2);
+      tc.fillStyle = `rgba(200,60,90,${0.25 + beat * 0.3})`;
+      tc.beginPath();
+      tc.ellipse(px, py, 9, 4.5, 0, 0, Math.PI * 2);
+      tc.fill();
+      tc.fillStyle = '#e04a6a';
+      tc.strokeStyle = '#1a0a0e';
+      tc.lineWidth = 1.5;
+      tc.beginPath();
+      tc.ellipse(px, py, 4.5, 2.6, 0, 0, Math.PI * 2);
+      tc.fill();
       tc.stroke();
     }
     const { cam } = state;

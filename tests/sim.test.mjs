@@ -33,12 +33,23 @@ for (const seed of [1, 42, 777, 2026, 99999]) {
   const reachable = g.ruins.filter(touchesReachable).length;
   console.log(`  ruínas alcançáveis: ${reachable}/${g.ruins.length}`);
   assert.ok(reachable / g.ruins.length > 0.85, 'maioria das ruínas alcançável');
+  const nestsOk = g.nests.filter(touchesReachable).length;
+  const nd = g.nests.map((n) => Math.hypot(n.x - g.hq.x, n.y - g.hq.y).toFixed(0)).join(', ');
+  console.log(`  ninhos: ${g.nests.length} (alcançáveis ${nestsOk}) a ${nd} tiles`);
+  assert.equal(g.nests.length, 3, 'três ninhos');
+  assert.equal(nestsOk, 3, 'todos os ninhos alcançáveis');
 }
 
 // 2. Coleta, saque e construção
 const g = new Game(42);
 const hq = g.hq;
-const [a, b, c, d, e] = g.units;
+const workers = g.units.filter((u) => u.role === 'catador');
+const soldier = g.units.find((u) => u.role === 'soldado');
+assert.equal(workers.length, 4, 'começa com 4 catadores');
+assert.ok(soldier && soldier.maxHp > workers[0].maxHp, 'e 1 soldado mais resistente');
+assert.equal(g.nests.length, 3, 'três ninhos no mapa');
+const [a, b, c, e] = workers;
+const d = c;
 const tree = g.findNearestTile(hq.x + 1, hq.y + 1, T.TREE, 30);
 const rock = g.findNearestTile(hq.x + 1, hq.y + 1, T.ROCK, 30);
 assert.ok(tree && rock, 'há árvore e pedra perto do acampamento');
@@ -46,7 +57,10 @@ console.log('árvore a', Math.hypot(tree[0] - hq.x, tree[1] - hq.y).toFixed(1), 
 // Revela tudo para poder dar ordens em tiles fora da visão inicial.
 g.map.explored.fill(1);
 assert.equal(g.orderSmart([a, b], tree[0] + 0.5, tree[1] + 0.5), 'gather');
-assert.equal(g.orderSmart([c], rock[0] + 0.5, rock[1] + 0.5), 'gather');
+assert.equal(g.orderSmart([b], rock[0] + 0.5, rock[1] + 0.5), 'gather');
+// Soldado mandado coletar só faz escolta.
+g.orderSmart([soldier], tree[0] + 0.5, tree[1] + 0.5);
+assert.equal(soldier.task?.kind, 'move', 'soldado não coleta');
 
 const ruin = [...g.ruins].sort((r1, r2) => Math.hypot(r1.x - hq.x, r1.y - hq.y) - Math.hypot(r2.x - hq.x, r2.y - hq.y))[0];
 ruin.lurkers = 0;
@@ -125,6 +139,49 @@ const damaged = g2.buildings.filter((bb) => bb.def.wall && bb.hp < bb.maxHp).len
 const bashing = g2.zombies.filter((z) => z.bash).length;
 console.log(`muros danificados: ${damaged}, zumbis batendo: ${bashing}, vida do QG: ${g2.hq?.hp}`);
 assert.ok(damaged > 0 || g2.stats.kills > 0, 'zumbis chegam à cerca');
+
+// 5b. Ninho: um pelotão chega, atira, o ninho reage com defensores e acaba caindo.
+{
+  const g4 = new Game(31);
+  g4.map.explored.fill(1);
+  const nest = g4.nests[0];
+  const nc = { x: nest.x + 1.5, y: nest.y + 1.5 };
+  // Pelotão de 10 soldados ao lado do ninho, com vida de sobra para o teste.
+  g4.units.length = 0;
+  const squad = [];
+  for (let i = 0; i < 10; i++) {
+    const u = g4.spawnUnit(nc.x, nc.y + 4, 'soldado');
+    u.hp = u.maxHp = 5000;
+    squad.push(u);
+  }
+  assert.equal(g4.orderSmart(squad, nc.x, nc.y, nest), 'attack');
+  assert.equal(squad[0].task.kind, 'assault');
+  let sawDefenders = false;
+  for (let s = 0; s < 120 && !nest.dead; s += STEP) {
+    g4.update(STEP);
+    if (g4.zombies.some((z) => z.defender)) sawDefenders = true;
+  }
+  console.log(`ninho: morto=${nest.dead} vida=${Math.ceil(nest.hp)} defensores=${sawDefenders} restam ${g4.nestsAlive}`);
+  assert.ok(sawDefenders, 'ninho manda defensores');
+  assert.ok(nest.dead, 'ninho destruído');
+  assert.equal(g4.nestsAlive, 2);
+  assert.ok(!g4.won, 'ainda não venceu');
+  for (const n of g4.nests) if (!n.dead) g4.destroyNest(n);
+  assert.ok(g4.won, 'vence ao destruir todos os ninhos');
+
+  // Hordas saem de um ninho vivo.
+  const g5 = new Game(8);
+  g5.day = 3;
+  g5.clock = DAY_LENGTH - 26;
+  run(g5, 2);
+  const origin = g5.hordeNest;
+  assert.ok(origin, 'horda tem ninho de origem');
+  run(g5, 26);
+  const hz = g5.zombies.filter((z) => z.mode === 'horde');
+  const near = hz.filter((z) => Math.hypot(z.x - origin.x - 1.5, z.y - origin.y - 1.5) < 10).length;
+  console.log(`horda do ninho: ${hz.length} zumbis, ${near} perto da origem`);
+  assert.ok(hz.length >= 8 && near / hz.length > 0.7, 'horda nasce perto do ninho');
+}
 
 // 6. Partida longa sem jogador: não pode quebrar
 const g3 = new Game(2026);

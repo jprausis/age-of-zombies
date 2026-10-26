@@ -205,7 +205,8 @@ export class Input {
     if (k === '.') this.nextIdle();
     else if (k === 'u') this.hud.upgrade();
     else if (k === 'x') g.stop([...s.selection]);
-    else if (k === 'r') this.hud.recruit();
+    else if (k === 'r') this.hud.recruit('catador');
+    else if (k === 's') this.hud.recruit('soldado');
     else if (k === 'e') this.select(g.units);
     else if (k === ' ') {
       const ping = g.pings[g.pings.length - 1];
@@ -274,7 +275,7 @@ export class Input {
     return this.pickVolume(p, (tx, ty, off) => {
       const o = m.occ[m.idx(tx, ty)];
       if (!o) return null;
-      const h = o.kind === 'ruin' ? RUIN_HEIGHT : HEIGHT[o.type] || 30;
+      const h = o.kind === 'ruin' ? RUIN_HEIGHT : o.kind === 'nest' ? 46 : HEIGHT[o.type] || 30;
       return off <= h ? { hit: o, d: o.x + o.y + (o.w + o.h) / 2 } : null;
     });
   }

@@ -36,10 +36,11 @@ function tool(ctx, kind, hx, hy, ang, side) {
 
 export function drawUnit(ctx, u, selected, env, act) {
   const [x, y] = P(u.x, u.y);
-  const jacket = C.jackets[u.look % C.jackets.length];
+  const soldier = u.role === 'soldado';
+  const jacket = soldier ? C.army[u.look % C.army.length] : C.jackets[u.look % C.jackets.length];
   const skin = C.skin[(u.look >> 3) % C.skin.length];
   const pants = C.pants[(u.look >> 5) % C.pants.length];
-  const hat = (u.look >> 7) % HATS;
+  const hat = soldier ? HATS : (u.look >> 7) % HATS; // HATS = capacete
   const hatColor = C.hats[(u.look >> 2) % C.hats.length];
   const hair = C.hair[(u.look >> 4) % C.hair.length];
   ellipse(ctx, x + 3, y + 1, 9, 4.5, C.shadow);
@@ -90,7 +91,8 @@ export function drawUnit(ctx, u, selected, env, act) {
     }
     // Espingarda segura com as duas mãos
     const gx = x + dx * 3, gy = y - 15;
-    const tx = x + dx * 17, ty = y - 15 + dy * 8;
+    const reach = soldier ? 21 : 17;
+    const tx = x + dx * reach, ty = y - 15 + dy * reach * 0.47;
     line(ctx, [gx - dx * 3, gy - dy * 1.5], [tx, ty], '#262422', 3);
     line(ctx, [gx - dx * 3, gy - dy * 1.5], [gx + dx * 3, gy + dy * 1.5], '#5a4026', 3.5);
     line(ctx, [x - side * 3, y - 19], [gx + dx * 4, gy + dy * 2], shade(jacket, 0.85), 3);
@@ -144,6 +146,13 @@ export function drawUnit(ctx, u, selected, env, act) {
     ctx.arc(hx, hy - 1, 5.3, Math.PI * 0.9, Math.PI * 2.1);
     ctx.fill();
     disc(ctx, hx, hy - 6.5, 1.8, shade(hatColor, 1.3));
+  } else if (hat === HATS) {
+    // Capacete com aba curta
+    ctx.fillStyle = '#4a5233';
+    ctx.beginPath();
+    ctx.arc(hx, hy - 0.8, 5.8, Math.PI * 0.92, Math.PI * 2.08);
+    ctx.fill();
+    line(ctx, [hx - 6.2, hy - 0.4], [hx + 6.2, hy - 0.4], '#3a4128', 1.6);
   } else {
     ctx.fillStyle = hair;
     ctx.beginPath();

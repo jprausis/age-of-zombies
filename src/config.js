@@ -15,27 +15,38 @@ export const ROCK_AMOUNT = 60;
 // Um ciclo = dia + noite, em segundos de jogo.
 export const DAY_LENGTH = 150;
 export const NIGHT_LENGTH = 90;
-export const WIN_DAY = 10; // sobreviver a 10 noites
+export const WIN_DAY = 10; // marco de sobrevivência (a vitória é destruir os ninhos)
 export const FIRST_HORDE_NIGHT = 2; // a primeira noite é calma
 
 export const RES_NAMES = { wood: 'Madeira', stone: 'Pedra', food: 'Comida', scrap: 'Sucata' };
 export const RES_ORDER = ['wood', 'stone', 'food', 'scrap'];
 
 export const START_RES = { wood: 120, stone: 40, food: 120, scrap: 0 };
-export const START_UNITS = 5;
+export const START_ROLES = ['catador', 'catador', 'catador', 'catador', 'soldado'];
 export const FOOD_PER_SURVIVOR = 4; // consumido a cada amanhecer
 
 export const UNIT = {
-  hp: 60,
   speed: 2.6,
   radius: 0.25,
-  range: 4.5,
-  dmg: 7,
-  cooldown: 1.1,
   capacity: 10,
   sight: 7,
   sightNight: 5,
+  heal: 2, // vida por segundo perto do acampamento
+  healRange: 8,
 };
+
+// Classes. Catadores coletam, saqueiam e constroem; soldados só lutam, mas lutam bem.
+export const ROLES = {
+  catador: {
+    name: 'Catador', plural: 'catadores', hp: 60, range: 4, dmg: 5, cooldown: 1.2, worker: true, weapon: 'Revólver',
+    cost: { food: 40 }, key: 'r', desc: 'Coleta madeira e pedra, saqueia ruínas e constrói. Atira pouco.',
+  },
+  soldado: {
+    name: 'Soldado', plural: 'soldados', hp: 110, range: 5.5, dmg: 13, cooldown: 0.9, worker: false, weapon: 'Fuzil',
+    cost: { food: 40, scrap: 25 }, key: 's', desc: 'Mais vida, mais dano e mais alcance. Não carrega nem constrói.',
+  },
+};
+export const ROLE_ORDER = ['catador', 'soldado'];
 
 export const GATHER_TIME = { wood: 0.7, stone: 1.0 };
 export const LOOT_TIME = 2.5;
@@ -128,7 +139,20 @@ export function buildingDef(type, level = 0) {
 
 export const BUILD_ORDER = ['tent', 'depot', 'palisade', 'stonewall', 'gate', 'tower', 'farm'];
 
-export const RECRUIT = { cost: { food: 40 }, time: 15, maxQueue: 5 };
+export const RECRUIT = { time: 15, maxQueue: 5 };
+
+// Ninhos: a origem das hordas. Destruir todos é a vitória.
+export const NEST = {
+  name: 'Ninho', count: 3, w: 3, h: 3,
+  hp: [1800, 2600, 3600], // do mais perto ao mais longe
+  regen: 8, // vida por segundo depois de 8 s sem levar tiro
+  guards: 6, // errantes rondando em volta
+  defenders: 10, // máximo de defensores soltos quando está sob ataque
+  defendEvery: 3, // segundos entre levas de defensores
+  defendWave: 2, // defensores por leva
+  spit: { range: 6.5, dmg: 10, every: 2.6 }, // cusparada de ácido em quem chega perto
+  reward: { scrap: 60, food: 40 },
+};
 
 export const RUINS = {
   casa: {

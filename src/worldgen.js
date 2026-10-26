@@ -1,4 +1,4 @@
-import { T, TREE_AMOUNT, ROCK_AMOUNT, RUINS, START_UNITS } from './config.js';
+import { T, TREE_AMOUNT, ROCK_AMOUNT, RUINS, START_ROLES, NEST } from './config.js';
 import { makeNoise } from './rng.js';
 
 const TOWN_NAMES = ['Vila Esperança', 'São Bento', 'Pedra Branca', 'Porto Velho', 'Santa Clara', 'Boa Vista', 'Rio Seco'];
@@ -155,11 +155,40 @@ export function generateWorld(game, rng) {
     near++;
   }
 
-  const hq = game.createBuilding('hq', cx - 1, cy - 1, true);
-  for (let i = 0; i < START_UNITS; i++) {
-    const a = (i / START_UNITS) * Math.PI * 2;
-    game.spawnUnit(cx + 0.5 + Math.cos(a) * 3, cy + 0.5 + Math.sin(a) * 3);
+  // Ninhos longe do acampamento e longe uns dos outros, em clareiras abertas na marra.
+  const nests = [];
+  for (let tries = 0; nests.length < NEST.count && tries < 600; tries++) {
+    const a = rng() * Math.PI * 2, r = rng.range(40, 56);
+    const x = Math.round(cx + Math.cos(a) * r) - 1, y = Math.round(cy + Math.sin(a) * r) - 1;
+    if (x < 6 || y < 6 || x + NEST.w > W - 6 || y + NEST.h > H - 6) continue;
+    if (nests.some((n) => Math.hypot(n.x - x, n.y - y) < 38 - tries / 40)) continue;
+    if (towns.some((t) => Math.hypot(t.x - x, t.y - y) < 15)) continue;
+    let clash = false;
+    for (let yy = y - 3; yy < y + NEST.h + 3 && !clash; yy++) {
+      for (let xx = x - 3; xx < x + NEST.w + 3; xx++) if (m.occ[m.idx(xx, yy)]) { clash = true; break; }
+    }
+    if (clash) continue;
+    for (let yy = y - 3; yy < y + NEST.h + 3; yy++) {
+      for (let xx = x - 3; xx < x + NEST.w + 3; xx++) {
+        const d = Math.hypot(xx - x - 1, yy - y - 1);
+        if (d < 3.2) setTile(xx, yy, T.DIRT);
+        else if (d < 4.5) setTile(xx, yy, rng.chance(0.4) ? T.RUBBLE : T.DIRT);
+      }
+    }
+    nests.push({ x, y, d: Math.hypot(x - cx, y - cy) });
   }
+  nests.sort((p, q) => p.d - q.d);
+  // Abre uma trilha até cada ninho, para não ficarem ilhados atrás de água ou pedra.
+  nests.forEach((n, k) => {
+    connectRoad(m, setTile, cx, cy, n.x + 1, n.y + 1, rng);
+    game.createNest(n.x, n.y, NEST.hp[Math.min(k, NEST.hp.length - 1)]);
+  });
+
+  const hq = game.createBuilding('hq', cx - 1, cy - 1, true);
+  START_ROLES.forEach((role, i) => {
+    const a = (i / START_ROLES.length) * Math.PI * 2;
+    game.spawnUnit(cx + 0.5 + Math.cos(a) * 3, cy + 0.5 + Math.sin(a) * 3, role);
+  });
 
   const randomPassable = (px, py, radius, minFromCamp) => {
     for (let k = 0; k < 40; k++) {
@@ -180,6 +209,13 @@ export function generateWorld(game, rng) {
   for (let i = 0; i < 22; i++) {
     const p = randomPassable(cx, cy, W / 2 - 2, 26);
     if (p) game.spawnZombie('walker', p[0], p[1], 'wander');
+  }
+
+  for (const n of game.nests) {
+    for (let i = 0; i < NEST.guards; i++) {
+      const p = randomPassable(n.x + 1.5, n.y + 1.5, 4, 22);
+      if (p) game.spawnZombie('walker', p[0], p[1], 'wander').home = n;
+    }
   }
 
   game.towns = towns;
